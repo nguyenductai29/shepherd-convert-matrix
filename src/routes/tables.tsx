@@ -22,7 +22,7 @@ export const Route = createFileRoute("/tables")({
 
 function TablesPage() {
   const [q, setQ] = useState("");
-  const [sel, setSel] = useState(tableDefs[0].name);
+  const [sel, setSel] = useState(tableDefs[0]!.name);
   const list = tableDefs.filter((t) => (t.name + t.logical).toLowerCase().includes(q.toLowerCase()));
   const table = tableDefs.find((t) => t.name === sel)!;
 

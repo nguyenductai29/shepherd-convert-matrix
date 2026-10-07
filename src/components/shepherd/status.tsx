@@ -14,7 +14,7 @@ const map: Record<Status, { label: string; cls: string; Icon: typeof CheckCircle
   disconnected: { label: "未接続", cls: "bg-neutral-soft text-muted-foreground border-border", Icon: PlugZap },
 };
 
-export function StatusBadge({ status, label, className }: { status: Status; label?: string; className?: string }) {
+export function StatusBadge({ status, label, className }: { status: Status; label?: string | undefined; className?: string }) {
   const { label: l, cls, Icon } = map[status];
   return (
     <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium leading-none", cls, className)}>

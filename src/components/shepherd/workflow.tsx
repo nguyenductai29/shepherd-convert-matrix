@@ -6,7 +6,7 @@ import { StatusBadge } from "./status";
 
 export const STEPS = ["ファイル選択", "フォーマット確認", "データ解析", "検証", "SQL生成"];
 
-export function StepProgress({ current, errorAt }: { current: number; errorAt?: number }) {
+export function StepProgress({ current, errorAt }: { current: number; errorAt?: number | undefined }) {
   return (
     <ol className="flex items-center gap-0 rounded-md border bg-card px-4 py-3">
       {STEPS.map((s, i) => {

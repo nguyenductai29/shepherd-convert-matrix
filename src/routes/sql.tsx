@@ -24,7 +24,7 @@ export const Route = createFileRoute("/sql")({
 
 function SqlPage() {
   const { scenario } = useAppState();
-  const [selected, setSelected] = useState<string>(sqlSections[0].table);
+  const [selected, setSelected] = useState<string>(sqlSections[0]!.table);
 
   const blocks = [
     { id: "_begin", sql: "START TRANSACTION;" },

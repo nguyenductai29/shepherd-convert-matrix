@@ -130,7 +130,7 @@ function ConvertPage() {
                   <div className="border-b bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground">m_departments ← シート「部門」（先頭5件）</div>
                   <table className="w-full font-mono text-xs">
                     <thead className="text-left text-muted-foreground">
-                      <tr>{Object.keys(recordPreview[0]).map((k) => <th key={k} className="px-3 py-2 font-medium">{k === "row" ? "行" : k}</th>)}</tr>
+                      <tr>{Object.keys(recordPreview[0]!).map((k) => <th key={k} className="px-3 py-2 font-medium">{k === "row" ? "行" : k}</th>)}</tr>
                     </thead>
                     <tbody>
                       {recordPreview.map((r) => (
