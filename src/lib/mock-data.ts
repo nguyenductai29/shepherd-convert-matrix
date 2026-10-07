@@ -322,3 +322,56 @@ export const generatedFiles = [
   { name: "validation_report.json", size: "21 KB" },
   { name: "master_snapshot.json", size: "1.2 MB" },
 ];
+
+/* ---------- Adapters to the shared contracts (src/models) ---------- */
+import type {
+  FormatCheckResult,
+  ParsedTableSummary,
+  SqlGenerationResult,
+  TableDefinition,
+  ValidationItem,
+  ValidationResult,
+} from "@/models";
+
+export const mockFormatCheck = (s: Scenario): FormatCheckResult => {
+  const items = formatChecks(s).map((c) => ({ ...c, status: c.status === "success" ? ("ok" as const) : c.status }));
+  return { passed: !items.some((i) => i.status === "error"), items };
+};
+
+export const mockParsedTables = (s: Scenario): ParsedTableSummary[] =>
+  parsedTables(s).map((t) => ({ ...t, status: t.status === "success" ? "ok" : t.status === "error" ? "error" : "warning" }));
+
+const categoryLabel: Record<ValidationIssue["category"], string> = {
+  intra: "マスタ内重複",
+  unique: "UNIQUE制約",
+  type: "データ型",
+  other: "その他",
+};
+
+export const mockValidationResult = (s: Scenario): ValidationResult => {
+  const sum = validationSummary(s);
+  const items: ValidationItem[] = validationIssues(s).map((i) => {
+    const rows = i.row.split(",").map((r) => Number(r.trim())).filter((n) => !Number.isNaN(n));
+    return {
+      severity: i.level,
+      category: categoryLabel[i.category],
+      sourceSheet: i.sheet,
+      ...(rows[0] != null ? { sourceRow: rows[0] } : {}),
+      ...(rows.length > 1 ? { relatedRows: rows.slice(1) } : {}),
+      table: i.table,
+      column: i.column,
+      value: i.value,
+      message: i.message,
+      detail: i.detail,
+    };
+  });
+  return { totalRecords: sum.total, okCount: sum.ok, errorCount: sum.errors, warningCount: sum.warnings, items, dbComparison: "unchecked" };
+};
+
+export const mockSqlResult = (): SqlGenerationResult => ({
+  generatedSql: fullSql(),
+  targetDb: "shepherd_prod (MySQL 8.0)",
+  generatedAt: "2026/10/07 11:55:00",
+});
+
+export const mockTableDefinitions: TableDefinition[] = tableDefs;

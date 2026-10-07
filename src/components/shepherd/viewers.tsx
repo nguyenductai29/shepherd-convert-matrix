@@ -1,7 +1,8 @@
 import { ArrowRight, Check, ChevronDown, Database, FileSpreadsheet, KeyRound, Lock } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import type { HistoryRow, SheetMapping, TableDef } from "@/lib/mock-data";
+import type { HistoryRow, SheetMapping } from "@/lib/mock-data";
+import type { TableDefinition as TableDef } from "@/models";
 import { StatusBadge } from "./status";
 import { Link } from "@tanstack/react-router";
 
@@ -16,25 +17,40 @@ function highlight(line: string): ReactNode {
   );
 }
 
-export function SQLCodeViewer({ blocks, selected }: { blocks: { id: string; sql: string }[]; selected?: string }) {
-  let n = 0;
+/** Splits SQL into sections at each "INSERT INTO <table>" (including the preceding comment block). */
+export function sqlTableSections(sql: string): { table: string; startLine: number; statements: number }[] {
+  const lines = sql.split("\n");
+  const out: { table: string; startLine: number; statements: number }[] = [];
+  lines.forEach((l, i) => {
+    const m = /^\s*INSERT\s+INTO\s+`?([\w.]+)`?/i.exec(l);
+    if (!m) return;
+    const existing = out.find((s) => s.table === m[1]);
+    if (existing) { existing.statements++; return; }
+    let start = i;
+    while (start > 0 && (lines[start - 1]!.trim().startsWith("--") || lines[start - 1]!.trim() === "")) start--;
+    while (start < i && lines[start]!.trim() === "") start++;
+    out.push({ table: m[1]!, startLine: start, statements: 1 });
+  });
+  return out;
+}
+
+export function SQLCodeViewer({ sql, selected }: { sql: string; selected?: string | undefined }) {
+  const lines = sql.split("\n");
+  const sections = sqlTableSections(sql);
+  const sel = sections.findIndex((s) => s.table === selected);
+  const selStart = sel >= 0 ? sections[sel]!.startLine : -1;
+  const selEnd = sel >= 0 ? (sections[sel + 1]?.startLine ?? lines.length) : -1;
+  const anchors = new Map(sections.map((s) => [s.startLine, s.table]));
   return (
     <div className="h-full overflow-auto bg-code py-3 font-mono text-[12.5px] leading-[1.65] text-code-foreground">
-      {blocks.map((b) => (
+      {lines.map((l, i) => (
         <div
-          key={b.id}
-          id={`sql-${b.id}`}
-          className={cn("border-l-2 border-transparent transition-colors", selected === b.id && "border-code-keyword bg-code-foreground/5")}
+          key={i}
+          id={anchors.has(i) ? `sql-${anchors.get(i)}` : undefined}
+          className={cn("flex whitespace-pre border-l-2 border-transparent", i >= selStart && i < selEnd && "border-code-keyword bg-code-foreground/5")}
         >
-          {(b.sql + "\n").split("\n").map((l) => {
-            n++;
-            return (
-              <div key={n} className="flex whitespace-pre">
-                <span className="w-12 shrink-0 select-none pr-4 text-right text-code-muted">{n}</span>
-                <span>{highlight(l)}</span>
-              </div>
-            );
-          })}
+          <span className="w-12 shrink-0 select-none pr-4 text-right text-code-muted">{i + 1}</span>
+          <span>{highlight(l)}</span>
         </div>
       ))}
     </div>

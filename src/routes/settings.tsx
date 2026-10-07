@@ -6,6 +6,56 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { InfoAlert, PageHeader, Section, StatusBadge } from "@/components/shepherd/status";
+import { FolderOpen, RotateCcw } from "lucide-react";
+import { useAppState } from "@/state/app-state";
+import { updateSettings, defaultSettings, loadSettings } from "@/services/platform/local-settings";
+import { pickOutputDirectory, revealInFolder } from "@/services/platform/files";
+import { isDesktop } from "@/services/platform/runtime";
+
+function LocalPathsSection() {
+  const { settings, setSettings } = useAppState();
+  const desktop = isDesktop();
+  const rows: [string, string | null][] = [
+    ["前回のテーブル定義書", settings.lastTableDefinitionPath],
+    ["前回のマスタフォルダ", settings.lastMasterDirectory],
+    ["前回の出力フォルダ", settings.lastOutputDirectory],
+  ];
+  return (
+    <Section
+      title="ローカル設定"
+      actions={
+        <Button variant="ghost" size="sm" onClick={async () => setSettings(await updateSettings(defaultSettings))}>
+          <RotateCcw />リセット
+        </Button>
+      }
+    >
+      <div className="divide-y">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[200px_1fr_auto] items-center gap-4 px-4 py-3">
+            <span className="text-sm">{label}</span>
+            <code className="truncate font-mono text-xs text-muted-foreground">{value ?? "未設定"}</code>
+            {value && desktop ? (
+              <Button variant="ghost" size="sm" onClick={() => revealInFolder(value)}><FolderOpen />開く</Button>
+            ) : <span />}
+          </div>
+        ))}
+        <div className="flex items-center justify-between px-4 py-3">
+          <p className="text-xs text-muted-foreground">
+            {desktop ? "パスはこのPCのアプリ設定ファイルに保存されます。" : "ブラウザプレビューではローカルパスは取得できません（デスクトップ版で利用可能）。"}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!desktop}
+            onClick={async () => { if (await pickOutputDirectory()) setSettings(await loadSettings()); }}
+          >
+            <FolderOpen />出力フォルダを選択
+          </Button>
+        </div>
+      </div>
+    </Section>
+  );
+}
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -35,6 +85,7 @@ function SettingsPage() {
     <>
       <PageHeader title="設定" />
       <div className="max-w-4xl space-y-6 p-8">
+        <LocalPathsSection />
         <Section title="基本設定">
           <div className="divide-y">
             <Row label="SQL出力文字コード">
