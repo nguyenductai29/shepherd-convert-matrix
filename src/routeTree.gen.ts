@@ -10,33 +10,141 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConvertRouteImport } from './routes/convert'
+import { Route as HistoryRouteImport } from './routes/history'
+import { Route as MappingRouteImport } from './routes/mapping'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SqlRouteImport } from './routes/sql'
+import { Route as TablesRouteImport } from './routes/tables'
+import { Route as ValidationRouteImport } from './routes/validation'
+import { Route as HistoryIdRouteImport } from './routes/history_.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConvertRoute = ConvertRouteImport.update({
+  id: '/convert',
+  path: '/convert',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MappingRoute = MappingRouteImport.update({
+  id: '/mapping',
+  path: '/mapping',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SqlRoute = SqlRouteImport.update({
+  id: '/sql',
+  path: '/sql',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TablesRoute = TablesRouteImport.update({
+  id: '/tables',
+  path: '/tables',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ValidationRoute = ValidationRouteImport.update({
+  id: '/validation',
+  path: '/validation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryIdRoute = HistoryIdRouteImport.update({
+  id: '/history_/$id',
+  path: '/history/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/convert': typeof ConvertRoute
+  '/history': typeof HistoryRoute
+  '/mapping': typeof MappingRoute
+  '/settings': typeof SettingsRoute
+  '/sql': typeof SqlRoute
+  '/tables': typeof TablesRoute
+  '/validation': typeof ValidationRoute
+  '/history/$id': typeof HistoryIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/convert': typeof ConvertRoute
+  '/history': typeof HistoryRoute
+  '/mapping': typeof MappingRoute
+  '/settings': typeof SettingsRoute
+  '/sql': typeof SqlRoute
+  '/tables': typeof TablesRoute
+  '/validation': typeof ValidationRoute
+  '/history/$id': typeof HistoryIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/convert': typeof ConvertRoute
+  '/history': typeof HistoryRoute
+  '/mapping': typeof MappingRoute
+  '/settings': typeof SettingsRoute
+  '/sql': typeof SqlRoute
+  '/tables': typeof TablesRoute
+  '/validation': typeof ValidationRoute
+  '/history_/$id': typeof HistoryIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/convert'
+    | '/history'
+    | '/mapping'
+    | '/settings'
+    | '/sql'
+    | '/tables'
+    | '/validation'
+    | '/history/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/convert'
+    | '/history'
+    | '/mapping'
+    | '/settings'
+    | '/sql'
+    | '/tables'
+    | '/validation'
+    | '/history/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/convert'
+    | '/history'
+    | '/mapping'
+    | '/settings'
+    | '/sql'
+    | '/tables'
+    | '/validation'
+    | '/history_/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConvertRoute: typeof ConvertRoute
+  HistoryRoute: typeof HistoryRoute
+  MappingRoute: typeof MappingRoute
+  SettingsRoute: typeof SettingsRoute
+  SqlRoute: typeof SqlRoute
+  TablesRoute: typeof TablesRoute
+  ValidationRoute: typeof ValidationRoute
+  HistoryIdRoute: typeof HistoryIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +156,75 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/convert': {
+      id: '/convert'
+      path: '/convert'
+      fullPath: '/convert'
+      preLoaderRoute: typeof ConvertRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mapping': {
+      id: '/mapping'
+      path: '/mapping'
+      fullPath: '/mapping'
+      preLoaderRoute: typeof MappingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sql': {
+      id: '/sql'
+      path: '/sql'
+      fullPath: '/sql'
+      preLoaderRoute: typeof SqlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tables': {
+      id: '/tables'
+      path: '/tables'
+      fullPath: '/tables'
+      preLoaderRoute: typeof TablesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/validation': {
+      id: '/validation'
+      path: '/validation'
+      fullPath: '/validation'
+      preLoaderRoute: typeof ValidationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history_/$id': {
+      id: '/history_/$id'
+      path: '/history/$id'
+      fullPath: '/history/$id'
+      preLoaderRoute: typeof HistoryIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConvertRoute: ConvertRoute,
+  HistoryRoute: HistoryRoute,
+  MappingRoute: MappingRoute,
+  SettingsRoute: SettingsRoute,
+  SqlRoute: SqlRoute,
+  TablesRoute: TablesRoute,
+  ValidationRoute: ValidationRoute,
+  HistoryIdRoute: HistoryIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
