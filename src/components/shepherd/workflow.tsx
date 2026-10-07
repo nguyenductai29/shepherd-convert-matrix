@@ -1,12 +1,18 @@
-import { Check, FileSpreadsheet, UploadCloud, X } from "lucide-react";
+import { Check, FileSpreadsheet, FolderOpen, Loader2, UploadCloud, X } from "lucide-react";
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useAppState } from "@/lib/app-state";
+import { useAppState } from "@/state/app-state";
+import type { FileKind, SelectedFile } from "@/models";
+import { FILE_RULES, fromBrowserFile, isAllowed, pickFileNative } from "@/services/platform/files";
+import { formatBytes, isDesktop } from "@/services/platform/runtime";
+import { loadSettings } from "@/services/platform/local-settings";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "./status";
 
 export const STEPS = ["ファイル選択", "フォーマット確認", "データ解析", "検証", "SQL生成"];
 
-export function StepProgress({ current, errorAt }: { current: number; errorAt?: number | undefined }) {
+export function StepProgress({ current, errorAt, busy }: { current: number; errorAt?: number | undefined; busy?: boolean }) {
   return (
     <ol className="flex items-center gap-0 rounded-md border bg-card px-4 py-3">
       {STEPS.map((s, i) => {
@@ -25,7 +31,7 @@ export function StepProgress({ current, errorAt }: { current: number; errorAt?: 
                   !done && !active && !err && "bg-muted text-muted-foreground",
                 )}
               >
-                {err ? <X className="h-3.5 w-3.5" /> : done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                {err ? <X className="h-3.5 w-3.5" /> : done ? <Check className="h-3.5 w-3.5" /> : active && busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : i + 1}
               </span>
               <span className={cn("text-xs font-medium", active || done ? "text-foreground" : "text-muted-foreground", err && "text-destructive")}>
                 {s}
@@ -39,21 +45,94 @@ export function StepProgress({ current, errorAt }: { current: number; errorAt?: 
   );
 }
 
-export function FileDropzone({ fileName, size }: { fileName: string; size: string }) {
-  const { uploaded, setUploaded } = useAppState();
-  const [drag, setDrag] = useState(false);
+/** Selected file info: name, local path, extension, size. */
+export function SelectedFileInfo({ file, onClear }: { file: SelectedFile; onClear?: () => void }) {
+  return (
+    <div className="flex items-start gap-3 rounded-md border bg-background px-3 py-2.5">
+      <FileSpreadsheet className="mt-0.5 h-5 w-5 shrink-0 text-success" />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="truncate font-mono text-xs font-medium">{file.name}</p>
+        <p className="truncate font-mono text-[11px] text-muted-foreground" title={file.path ?? undefined}>
+          {file.path ?? "（ブラウザプレビューではローカルパスを取得できません）"}
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          <span className="font-mono">{file.extension}</span> ・ {formatBytes(file.size)}
+        </p>
+      </div>
+      <StatusBadge status="success" label="選択済み" />
+      {onClear && (
+        <button onClick={onClear} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="選択を解除">
+          <X className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function useFileSelection(kind: FileKind) {
+  const { setFile, setSettings } = useAppState();
   const input = useRef<HTMLInputElement>(null);
+
+  const accept = (f: SelectedFile | null) => {
+    if (!f) return;
+    if (!isAllowed(kind, f.name)) {
+      toast.error(`対応していないファイル形式です（${FILE_RULES[kind].extensions.map((e) => "." + e).join(", ")}）`);
+      return;
+    }
+    setFile(f, kind);
+    loadSettings().then(setSettings);
+  };
+
+  const pick = async () => {
+    if (isDesktop()) {
+      try {
+        accept(await pickFileNative(kind));
+      } catch (e) {
+        toast.error(`ファイルを選択できませんでした: ${String(e)}`);
+      }
+    } else input.current?.click();
+  };
+
+  const hiddenInput = (
+    <input
+      ref={input}
+      type="file"
+      accept={FILE_RULES[kind].extensions.map((e) => "." + e).join(",")}
+      className="hidden"
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) accept(fromBrowserFile(kind, f));
+        e.target.value = "";
+      }}
+    />
+  );
+
+  return { pick, accept, hiddenInput };
+}
+
+/** Large drop area + native picker. Used for the master file. */
+export function FileDropzone({ kind }: { kind: FileKind }) {
+  const { conversion, setFile } = useAppState();
+  const file = kind === "master" ? conversion.masterFile : conversion.tableDefinitionFile;
+  const { pick, accept, hiddenInput } = useFileSelection(kind);
+  const [drag, setDrag] = useState(false);
+  const exts = FILE_RULES[kind].extensions.map((e) => "." + e).join(" / ");
 
   return (
     <div className="space-y-3">
       <div
         role="button"
         tabIndex={0}
-        onClick={() => input.current?.click()}
-        onKeyDown={(e) => e.key === "Enter" && input.current?.click()}
+        onClick={pick}
+        onKeyDown={(e) => e.key === "Enter" && pick()}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
         onDragLeave={() => setDrag(false)}
-        onDrop={(e) => { e.preventDefault(); setDrag(false); setUploaded(true); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) accept(fromBrowserFile(kind, f));
+        }}
         className={cn(
           "flex cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed px-6 py-8 text-center transition-colors",
           drag ? "border-primary bg-info-soft" : "border-input hover:border-primary/60 hover:bg-muted/50",
@@ -62,26 +141,33 @@ export function FileDropzone({ fileName, size }: { fileName: string; size: strin
         <UploadCloud className={cn("h-8 w-8", drag ? "text-primary" : "text-muted-foreground")} />
         <p className="mt-2 text-sm font-medium">ここにマスタファイルをドラッグ＆ドロップ</p>
         <p className="mt-0.5 text-xs text-muted-foreground">またはクリックしてファイルを選択</p>
-        <p className="mt-2 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">対応形式: .xlsm</p>
-        <input ref={input} type="file" accept=".xlsm" className="hidden" onChange={() => setUploaded(true)} />
+        <p className="mt-2 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">対応形式: {exts}</p>
+        {hiddenInput}
       </div>
-      {uploaded && (
-        <div className="flex items-center gap-3 rounded-md border bg-background px-3 py-2.5">
-          <FileSpreadsheet className="h-5 w-5 shrink-0 text-success" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-mono text-xs font-medium">{fileName}</p>
-            <p className="text-[11px] text-muted-foreground">{size} ・ アップロード完了</p>
-          </div>
-          <StatusBadge status="success" label="読込完了" />
-          <button
-            onClick={() => setUploaded(false)}
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="ファイルを削除"
-          >
-            <X className="h-4 w-4" />
-          </button>
+      {file && <SelectedFileInfo file={file} onClear={() => setFile(null, kind)} />}
+    </div>
+  );
+}
+
+/** Compact picker button + file info. Used for the table definition file. */
+export function FilePickerCard({ kind }: { kind: FileKind }) {
+  const { conversion, setFile } = useAppState();
+  const file = kind === "master" ? conversion.masterFile : conversion.tableDefinitionFile;
+  const { pick, hiddenInput } = useFileSelection(kind);
+  return (
+    <div className="space-y-3">
+      {file ? (
+        <SelectedFileInfo file={file} onClear={() => setFile(null, kind)} />
+      ) : (
+        <div className="flex items-center gap-3 rounded-md border border-dashed bg-background p-3 text-xs text-muted-foreground">
+          <FileSpreadsheet className="h-5 w-5" />
+          未選択（対応形式: {FILE_RULES[kind].extensions.map((e) => "." + e).join(", ")}）
         </div>
       )}
+      <Button variant="outline" size="sm" onClick={pick}>
+        <FolderOpen />{file ? "ファイルを変更" : "ファイルを選択"}
+      </Button>
+      {hiddenInput}
     </div>
   );
 }

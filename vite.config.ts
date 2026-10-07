@@ -6,10 +6,15 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+// SHEPHERD_DESKTOP=1 is set by the Tauri scripts: build a static SPA shell for the desktop window.
+const desktop = process.env['SHEPHERD_DESKTOP'] === "1";
+
 export default defineConfig({
+  ...(desktop ? { nitro: false as const } : {}),
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
+    ...(desktop ? { spa: { enabled: true } } : {}),
   },
 });

@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ArrowLeftRight, Code2, Database, GitCompareArrows, History, LayoutDashboard, Moon, Settings, ShieldCheck, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAppState } from "@/lib/app-state";
+import { useAppState } from "@/state/app-state";
 import { Switch } from "@/components/ui/switch";
 
 const items = [
@@ -17,7 +17,8 @@ const items = [
 
 export function AppSidebar() {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const { dark, toggleDark, scenario } = useAppState();
+  const { dark, toggleDark, conversion } = useAppState();
+  const errorCount = conversion.validationResult?.errorCount ?? 0;
   const active = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
 
   return (
@@ -43,8 +44,8 @@ export function AppSidebar() {
           >
             <it.icon className={cn("h-4 w-4", active(it.to) && "text-sidebar-primary")} />
             {it.label}
-            {it.to === "/validation" && scenario === "error" && (
-              <span className="ml-auto rounded bg-destructive px-1.5 font-mono text-[10px] font-semibold text-destructive-foreground">7</span>
+            {it.to === "/validation" && errorCount > 0 && (
+              <span className="ml-auto rounded bg-destructive px-1.5 font-mono text-[10px] font-semibold text-destructive-foreground">{errorCount}</span>
             )}
           </Link>
         ))}
