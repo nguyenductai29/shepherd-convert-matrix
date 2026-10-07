@@ -1,0 +1,66 @@
+import { Link, useRouterState } from "@tanstack/react-router";
+import { ArrowLeftRight, Code2, Database, GitCompareArrows, History, LayoutDashboard, Moon, Settings, ShieldCheck, Sun } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useAppState } from "@/lib/app-state";
+import { Switch } from "@/components/ui/switch";
+
+const items = [
+  { to: "/", label: "ダッシュボード", icon: LayoutDashboard },
+  { to: "/convert", label: "マスタ変換", icon: ArrowLeftRight },
+  { to: "/validation", label: "検証結果", icon: ShieldCheck },
+  { to: "/sql", label: "SQLプレビュー", icon: Code2 },
+  { to: "/tables", label: "テーブル定義", icon: Database },
+  { to: "/mapping", label: "マッピング", icon: GitCompareArrows },
+  { to: "/history", label: "変換履歴", icon: History },
+  { to: "/settings", label: "設定", icon: Settings },
+] as const;
+
+export function AppSidebar() {
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const { dark, toggleDark, scenario } = useAppState();
+  const active = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
+
+  return (
+    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
+      <div className="flex items-center gap-2.5 border-b border-sidebar-border px-4 py-4">
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary font-mono text-sm font-bold text-sidebar-primary-foreground">S</div>
+        <div className="leading-tight">
+          <p className="text-sm font-semibold text-foreground">Shepherd</p>
+          <p className="text-[11px] text-muted-foreground">Master SQL Generator</p>
+        </div>
+      </div>
+      <nav className="flex-1 space-y-0.5 p-2">
+        {items.map((it) => (
+          <Link
+            key={it.to}
+            to={it.to}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors",
+              active(it.to)
+                ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                : "hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+            )}
+          >
+            <it.icon className={cn("h-4 w-4", active(it.to) && "text-sidebar-primary")} />
+            {it.label}
+            {it.to === "/validation" && scenario === "error" && (
+              <span className="ml-auto rounded bg-destructive px-1.5 font-mono text-[10px] font-semibold text-destructive-foreground">7</span>
+            )}
+          </Link>
+        ))}
+      </nav>
+      <div className="space-y-3 border-t border-sidebar-border p-4">
+        <label className="flex items-center justify-between text-xs">
+          <span className="flex items-center gap-2">
+            {dark ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}ダークモード切替
+          </span>
+          <Switch checked={dark} onCheckedChange={toggleDark} />
+        </label>
+        <div className="text-[11px] text-muted-foreground">
+          <p className="font-medium text-foreground">Shepherd</p>
+          <p className="font-mono">Version 0.1.0</p>
+        </div>
+      </div>
+    </aside>
+  );
+}
