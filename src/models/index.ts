@@ -1,5 +1,4 @@
-// Shared data contracts between the UI and the (future) processing services.
-// Real implementations must return exactly these shapes.
+// Shared contracts for local Excel processing and the existing UI.
 
 /* ---------- Files ---------- */
 export type FileKind = "tableDefinition" | "master";
@@ -12,6 +11,7 @@ export interface SelectedFile {
   extension: string;
   /** Bytes, when available. */
   size: number | null;
+  modifiedAt?: string | null;
 }
 
 /* ---------- Workflow ---------- */
@@ -51,6 +51,10 @@ export interface ColumnDefinition {
   unique?: boolean;
   def?: string;
   ai?: boolean;
+  length?: number;
+  scale?: number;
+  unsigned?: boolean;
+  collation?: string;
 }
 
 export interface IndexDefinition {
@@ -85,8 +89,8 @@ export interface MasterParseResult {
   file: SelectedFile;
   tables: ParsedTableSummary[];
   totalRecords: number;
-  /** Raw parsed rows per table — shape decided by the real parser. */
-  data: unknown;
+  data: MasterRecord[];
+  issues?: ValidationItem[];
 }
 
 /* ---------- Validation ---------- */
@@ -121,4 +125,45 @@ export interface SqlGenerationResult {
   generatedSql: string;
   targetDb: string;
   generatedAt: string;
+}
+
+export type ScalarValue = string | number | boolean | null;
+
+/** Reference to an inserted parent record, resolved without assuming database IDs. */
+export interface RecordReference {
+  kind: "reference";
+  recordId: string;
+  column: string;
+}
+
+export interface MasterRecord {
+  id: string;
+  entity: string;
+  targetTable: string;
+  sourceSheet: string;
+  sourceRow: number;
+  values: Record<string, ScalarValue | RecordReference>;
+  originalValues: Record<string, unknown>;
+  sourceCells?: Record<string, string>;
+}
+
+export interface SqlOptions {
+  sqlTransaction: boolean;
+  sqlComments: boolean;
+}
+
+export type Status =
+  | "success"
+  | "error"
+  | "warning"
+  | "processing"
+  | "idle"
+  | "disconnected"
+  | "failed"
+  | "validation_error";
+
+export interface SheetMapping {
+  sheet: string;
+  table: string;
+  mappings: { excel: string; column: string; note?: string }[];
 }

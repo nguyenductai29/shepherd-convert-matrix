@@ -9,6 +9,7 @@ export function basename(p: string): string {
 
 export function dirname(p: string): string {
   const i = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
+  if (i === 0 || (i === 2 && /^[A-Za-z]:[\\/]/.test(p))) return p.slice(0, i + 1);
   return i > 0 ? p.slice(0, i) : p;
 }
 

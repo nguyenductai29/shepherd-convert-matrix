@@ -1,6 +1,6 @@
 [package]
 name = "shepherd-master-sql-generator"
-version = "0.1.0"
+version = "1.0.0"
 description = "Shepherd Master SQL Generator"
 edition = "2021"
 
@@ -19,3 +19,4 @@ tauri-plugin-store = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }

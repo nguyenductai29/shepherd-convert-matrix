@@ -1,5 +1,16 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ArrowLeftRight, Code2, Database, GitCompareArrows, History, LayoutDashboard, Moon, Settings, ShieldCheck, Sun } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Code2,
+  Database,
+  GitCompareArrows,
+  History,
+  LayoutDashboard,
+  Moon,
+  Settings,
+  ShieldCheck,
+  Sun,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/state/app-state";
 import { Switch } from "@/components/ui/switch";
@@ -24,7 +35,9 @@ export function AppSidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="flex items-center gap-2.5 border-b border-sidebar-border px-4 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary font-mono text-sm font-bold text-sidebar-primary-foreground">S</div>
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary font-mono text-sm font-bold text-sidebar-primary-foreground">
+          S
+        </div>
         <div className="leading-tight">
           <p className="text-sm font-semibold text-foreground">Shepherd</p>
           <p className="text-[11px] text-muted-foreground">Master SQL Generator</p>
@@ -45,7 +58,9 @@ export function AppSidebar() {
             <it.icon className={cn("h-4 w-4", active(it.to) && "text-sidebar-primary")} />
             {it.label}
             {it.to === "/validation" && errorCount > 0 && (
-              <span className="ml-auto rounded bg-destructive px-1.5 font-mono text-[10px] font-semibold text-destructive-foreground">{errorCount}</span>
+              <span className="ml-auto rounded bg-destructive px-1.5 font-mono text-[10px] font-semibold text-destructive-foreground">
+                {errorCount}
+              </span>
             )}
           </Link>
         ))}
@@ -53,13 +68,14 @@ export function AppSidebar() {
       <div className="space-y-3 border-t border-sidebar-border p-4">
         <label className="flex items-center justify-between text-xs">
           <span className="flex items-center gap-2">
-            {dark ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}ダークモード切替
+            {dark ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+            ダークモード切替
           </span>
           <Switch checked={dark} onCheckedChange={toggleDark} />
         </label>
         <div className="text-[11px] text-muted-foreground">
           <p className="font-medium text-foreground">Shepherd</p>
-          <p className="font-mono">Version 0.1.0</p>
+          <p className="font-mono">Version 1.0.0</p>
         </div>
       </div>
     </aside>

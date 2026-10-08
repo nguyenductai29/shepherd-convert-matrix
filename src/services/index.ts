@@ -1,7 +1,6 @@
-// Single place to swap placeholder services for real implementations.
 import type { ProcessingServices } from "./processing/interfaces";
-import { placeholderServices } from "./processing/placeholder";
+import { processingServices } from "./processing/worker-client";
 
-export const services: ProcessingServices = placeholderServices;
+export const services: ProcessingServices = processingServices;
 
 export type * from "./processing/interfaces";
