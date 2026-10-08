@@ -27,5 +27,7 @@ export const kbnFixture: KbnDefinition[] = Object.entries({
     category_kbn_code,
     kbn_name,
     kbn_value,
+    order_no: 0,
+    invalid_flg: false,
   })),
 );

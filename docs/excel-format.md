@@ -1,6 +1,6 @@
 # Supported Shepherd workbook contract
 
-The conversion uses four local files: a database table definition `.xlsx`, an existing department reference `.xlsx`, a KBN definition `.json`, and the finalized nine-sheet Shepherd matrix workbook (`.xlsm` or `.xlsx`). Format knowledge and extraction rules live in `src/config/shepherd-master.ts`; the UI displays the same read-only mapping definitions used by the parser. This is not a generic Excel importer.
+The conversion uses four local files: a database table definition `.xlsx`, an existing department reference `.xlsx`, a KBN definition `.xlsx`, and the finalized nine-sheet Shepherd matrix workbook (`.xlsm` or `.xlsx`). Format knowledge and extraction rules live in `src/config/shepherd-master.ts`; the UI displays the same read-only mapping definitions used by the parser. This is not a generic Excel importer.
 
 ## Table definition workbook
 
@@ -32,9 +32,29 @@ The selected department workbook, for example `ShepherdDB.m_departments.xlsx`, r
 
 Audit and effective-date columns are not required. Unrelated extra columns are ignored. Missing or repeated required headers, multiple candidate sheets and malformed reference values are errors.
 
-Exactly one row must have `department_code === extractedDepartmentCode`. Zero matches produce `部門コードに対応する部署が見つかりません。`; multiple matches produce `同一の部門コードが部門マスタに複数存在します。`. The resolved department is displayed read-only. Its integer `department_id` is injected into every generated record that has a `department_id` column. No department code is substituted for that ID, and no real or synthetic `m_departments` record is generated.
+Exactly one active row (`invalid_flg = 0`) must have `department_code === extractedDepartmentCode`. Inactive rows are excluded before counting matches; one active row and any inactive rows with the same code resolve successfully. Zero active matches produce `部門コードに対応する部署が見つかりません。`; multiple active matches produce `同一の部門コードが部門マスタに複数存在します。`. The resolved department is displayed read-only. Its integer `department_id` is injected into every generated record that has a `department_id` column. No department code is substituted for that ID, and no real or synthetic `m_departments` record is generated.
 
-Department source paths persist on desktop and are reloaded at startup. Browser users reselect the department workbook; its rows are not stored as a saved settings dictionary. If the file changes while the application is open, reselect it to load the new contents.
+All three reference workbook paths (schema, department and KBN) persist on desktop. Startup rereads and validates each saved Excel file; missing or unreadable files produce a warning and require reselection. Browser users reselect the reference workbooks after a page reload. Department rows are not stored as a saved settings dictionary, and cached KBN rows cannot replace a fresh workbook load. If a file changes while the application is open, reselect it to load the new contents.
+
+## KBN reference workbook
+
+The selected `.xlsx`, for example `ShepherdDB.m_kbn_definition.xlsx`, represents existing `m_kbn_definition` reference rows. Exactly one sheet must contain all five headers in its first nonempty row; column order is unrestricted:
+
+| Column              | Reference requirement                                                   |
+| ------------------- | ----------------------------------------------------------------------- |
+| `category_kbn_code` | Nonempty category string                                                |
+| `kbn_value`         | Nonempty code, normalized to a string even if the Excel cell is numeric |
+| `kbn_name`          | Nonempty display name                                                   |
+| `order_no`          | Integer in the signed 32-bit range                                      |
+| `invalid_flg`       | Boolean/bit `0` or `1`; only `0` participates in lookups                |
+
+Missing or repeated required headers, multiple candidate sheets, blank required cells and malformed values block conversion. Completely empty rows are ignored. Audit columns (`created_at`, `created_by`, `updated_at`, `updated_by`) are not required, and unrelated extra columns are ignored. The normalized model retains `order_no` and a boolean `invalid_flg`.
+
+Values such as numeric `0`, `1` and `10` become `"0"`, `"1"` and `"10"`; text codes such as `IF0016` and `IF0017_A` remain strings. Simple Excel zero-padding formats such as `000` preserve displayed codes such as `001`. Values are not replaced with guessed numeric defaults.
+
+Uniqueness is checked among active rows only. `(category_kbn_code, kbn_value)` must identify exactly one active row, including when duplicate rows have identical contents. One active `(category_kbn_code, kbn_name)` cannot map to different values. Inactive rows never resolve names or values and do not cause active-key ambiguity.
+
+External JSON definitions are no longer accepted. Legacy JSON source settings and source-less cached definitions require selection of an Excel reference. On every startup the runtime clears the cached KBN rows and loads the saved `.xlsx` again on desktop; browser users must reselect it. Settings metadata is not proof that a source has been loaded in the current session.
 
 ## Fixed master sheets
 
@@ -82,9 +102,9 @@ The supplied sample is valid at process columns 13 and 15: item `S2`/`U2` and pr
 
 Confirmed automatic values are applied to the columns that actually exist in each target table: `created_by = 1`, `updated_by = 1`, `effective_from = current local date`, and `effective_to = 9999-12-31`. The date is evaluated once per conversion, including after the app stays open overnight, and never loaded from a saved effective date. Manual department, audit and date inputs are removed; obsolete saved overrides are ignored. Missing departments or global KBN definitions stop before record validation, preventing cascading missing-value errors.
 
-Quantity remains configurable under `設定 → 品目構成の設定` when product structures require it and the schema supplies no applicable default. No quantity is silently assumed. If the table definition supplies a usable DEFAULT, leaving the setting blank preserves database default behavior.
+If one unresolved quantity policy affects many product structures, validation reports one root requirement rather than repeating a NOT NULL error for every affected row. Quantity remains configurable under `設定 → 品目構成の設定` when product structures require it and the schema supplies no applicable default. No quantity is silently assumed. If the table definition supplies a usable DEFAULT, leaving the setting blank preserves database default behavior.
 
-`KbnResolver` resolves `(category_kbn_code, kbn_name)` to `kbn_value` and supports reverse lookup. The JSON source is an array of these fields, with optional `invalid_flg`; invalid/inactive rows cannot supply values. Conflicting definitions are rejected. The loaded snapshot and source metadata persist locally. Changes to the file require explicit reload/reselection; no database connection or automatic remote refresh occurs.
+`KbnResolver.resolve(categoryKbnCode, kbnName)` resolves `(category_kbn_code, kbn_name)` to a string `kbn_value`; `resolveByValue(categoryKbnCode, kbnValue)` returns the name. Both use only the active rows of the validated Excel reference. Missing names or values produce clear mapping errors with source locations where available. Changes to a file during a session require reselection; no database connection or remote refresh occurs.
 
 All applicable parser values use the resolver: `KBN_PRODUCT_MANAGEMENT / Shepherd`, `KBN_PROCESS`, `KBN_INPUT_TYPE`, `KBN_DISPLAY`, `KBN_UNIT`, `KBN_PART_TYPE`, `KBN_PREV_PROC_CHECK`, `KBN_FINAL_PROC_CHECK`, and `KBN_PRINT_PATTERN`. `KBN_ROLE` is not required because user permission generation is excluded. Workbook-specific label aliases are centralized in the fixed format configuration and used only when the source has no exact label; no production numeric KBN fallback dictionaries remain. Option-input behavior uses canonical names, so changed codes do not bypass required option references.
 
@@ -102,7 +122,7 @@ Every normalized record retains source sheet/row, original mapped values and sou
 
 ## Tests without private workbooks
 
-`src/test/fixtures/master-workbook.ts` builds a synthetic nine-sheet workbook. Unit tests cover fixed-format rejection, partial rows, extraction, references, attributes, formula caches including 0/false, merged cells, colored marks, shared formulas and malformed archive limits. Department tests cover filename extraction/rejection, required columns, absent/duplicate matches, resolved integer IDs and generation scope. No customer workbook is committed.
+`src/test/fixtures/master-workbook.ts` builds a synthetic nine-sheet workbook. Unit tests cover fixed-format rejection, partial rows, extraction, references, attributes, formula caches including 0/false, merged cells, colored marks, shared formulas and malformed archive limits. Department tests cover filename extraction/rejection, required columns, absent/duplicate active matches, inactive exclusion, resolved integer IDs and generation scope. KBN tests cover the five required columns, numeric/text codes, zero-padding, order/flag validation, inactive exclusion, identical active-key duplicates, ambiguous names, resolver lookups and JSON rejection. Runtime tests cover startup reload, missing files, stale results and cached-source rejection. No customer workbook is committed.
 
 Optional local acceptance tests read private workbooks from environment variables:
 
@@ -110,7 +130,7 @@ Optional local acceptance tests read private workbooks from environment variable
 $env:SHEPHERD_SCHEMA_FIXTURE = 'C:\local\table-definition.xlsx'
 $env:SHEPHERD_MASTER_FIXTURE = 'C:\local\HPK_Shepherd導入_マスタ整備ファイル.xlsm'
 $env:SHEPHERD_DEPARTMENT_FIXTURE = 'C:\local\ShepherdDB.m_departments.xlsx'
-$env:SHEPHERD_KBN_FIXTURE = 'C:\local\m_kbn_definition.json'
+$env:SHEPHERD_KBN_FIXTURE = 'C:\local\m_kbn_definition.xlsx'
 npm run test
 ```
 

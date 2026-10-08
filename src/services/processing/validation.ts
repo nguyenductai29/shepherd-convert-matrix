@@ -52,6 +52,48 @@ export function validateMaster(
   const failedRecordIds = new Set<string>();
   const tables = new Map(definition.tables.map((table) => [table.name, table]));
   const records = new Map(parsed.data.map((record) => [record.id, record]));
+  const mappingErrors = (parsed.issues ?? []).filter(
+    (item) => item.severity === "error" && item.category === "mapping" && item.column,
+  );
+  // Only suppress a consequence when a precise source/column error already
+  // explains the absent value. Other rows, columns and constraints still run.
+  const hasUnresolvedMapping = (record: MasterRecord, column: string): boolean => {
+    let current = record;
+    let name = column;
+    const visited = new Set<string>();
+    while (true) {
+      const key = `${current.id}\0${name}`;
+      if (visited.has(key)) return false;
+      visited.add(key);
+      const metadata = tables
+        .get(current.targetTable)
+        ?.columns.find((column) => column.name === name);
+      // Unknown schema references and database-supplied values have their own
+      // validation requirements; a source mapping issue must not hide them.
+      if (!metadata) return false;
+      const value = current.values[name];
+      if (value === undefined && (hasDefault(metadata) || isAutoIncrement(metadata))) return false;
+      if (isReference(value)) {
+        const parent = records.get(value.recordId);
+        if (!parent) return false;
+        current = parent;
+        name = value.column;
+        continue;
+      }
+      if (value !== null && value !== undefined) return false;
+      const address = current.sourceCells?.[name];
+      const sourceRow = address
+        ? Number(/(\d+)$/.exec(address)?.[1] ?? current.sourceRow)
+        : current.sourceRow;
+      return mappingErrors.some(
+        (item) =>
+          item.sourceSheet === current.sourceSheet &&
+          item.sourceRow === sourceRow &&
+          item.column === name &&
+          (!item.table || item.table === current.targetTable),
+      );
+    }
+  };
   const recordsByTable = new Map<string, MasterRecord[]>();
   const issue = (
     category: string,
@@ -164,6 +206,10 @@ export function validateMaster(
         .flatMap((index) => index.columns),
     );
     for (const column of table.columns) {
+      if (hasUnresolvedMapping(record, column.name)) {
+        failedRecordIds.add(record.id);
+        continue;
+      }
       const value = record.values[column.name];
       const required = !column.nullable || primary.has(column.name);
       if (value === undefined) {
@@ -305,6 +351,10 @@ export function validateMaster(
         const display: string[] = [];
         let skip = false;
         for (const name of index.columns) {
+          if (hasUnresolvedMapping(record, name)) {
+            skip = true;
+            break;
+          }
           const column = columnByName.get(name)!;
           const effective = resolve(record, column);
           if (effective.kind === "unknown") {

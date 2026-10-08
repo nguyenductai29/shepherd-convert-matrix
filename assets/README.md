@@ -4,9 +4,12 @@
 wordmark. Use it where there is enough horizontal space to keep the subtitle
 readable.
 
-The sidebar keeps its existing 32-pixel icon and text layout. Its compact icon,
-the browser favicon, and the desktop/installer icons all use the symbol from the
-supplied image without redrawing it.
+The sidebar embeds this exact PNG in an SVG viewport (`55 270 1365 520`) that
+removes surrounding whitespace while preserving the full horizontal symbol,
+wordmark and subtitle. The original image is 1448×1086; its pixels, colors and
+aspect ratio are unchanged. The logo sits on a white surface in both themes.
+The browser favicon and desktop/installer icons use the compact symbol from
+the same supplied image without redrawing it.
 
 `../src-tauri/app-icon.svg` embeds the original PNG in a square SVG viewport.
 The viewport displays source coordinates `x=52..468`, `y=270..782`, with white

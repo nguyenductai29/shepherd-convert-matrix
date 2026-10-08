@@ -58,7 +58,8 @@ export const processingServices: ProcessingServices = {
   },
   kbnDefinition: {
     async load(file) {
-      if (file.kind !== "kbnDefinition") throw new Error("KBN定義データを選択してください。");
+      if (file.kind !== "kbnDefinition")
+        throw new Error("区分名称マスタのExcelファイル（.xlsx）を選択してください。");
       return processInWorker("kbn-definition", { file }, await bytes(file));
     },
   },

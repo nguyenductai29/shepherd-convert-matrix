@@ -29,7 +29,13 @@ vi.mock("@/services", () => ({
     },
     kbnDefinition: {
       load: vi.fn(async () => [
-        { category_kbn_code: "KBN_PRODUCT_MANAGEMENT", kbn_name: "Shepherd", kbn_value: "1" },
+        {
+          category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+          kbn_name: "Shepherd",
+          kbn_value: "1",
+          order_no: 1,
+          invalid_flg: false,
+        },
       ]),
     },
   },
@@ -45,6 +51,7 @@ describe("conversion input boundaries", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    vi.mocked(fileFromPath).mockReset().mockResolvedValue(null);
   });
   afterEach(cleanup);
 
@@ -79,7 +86,7 @@ describe("conversion input boundaries", () => {
     );
     await act(async () =>
       state.setFile(
-        { kind: "kbnDefinition", name: "区分.json", path: null, extension: ".json", size: 10 },
+        { kind: "kbnDefinition", name: "区分.xlsx", path: null, extension: ".xlsx", size: 10 },
         "kbnDefinition",
       ),
     );
@@ -134,26 +141,51 @@ describe("conversion input boundaries", () => {
     expect(state.conversion.departmentReference).toBeNull();
   });
 
-  it("reloads a remembered department workbook and restores the persisted KBN source card", async () => {
-    const file: SelectedFile = {
-      kind: "departmentReference",
-      name: "部署.xlsx",
-      path: "C:\\部署.xlsx",
-      extension: ".xlsx",
-      size: 10,
-    };
-    vi.mocked(fileFromPath).mockResolvedValueOnce(file);
+  it("reloads all three remembered references and replaces persisted KBN rows with the current workbook", async () => {
+    const files: SelectedFile[] = [
+      {
+        kind: "tableDefinition",
+        name: "定義.xlsx",
+        path: "C:\\定義.xlsx",
+        extension: ".xlsx",
+        size: 10,
+      },
+      {
+        kind: "departmentReference",
+        name: "部署.xlsx",
+        path: "C:\\部署.xlsx",
+        extension: ".xlsx",
+        size: 10,
+      },
+      {
+        kind: "kbnDefinition",
+        name: "区分.xlsx",
+        path: "C:\\区分.xlsx",
+        extension: ".xlsx",
+        size: 42,
+      },
+    ];
+    vi.mocked(fileFromPath).mockImplementation(
+      async (kind) => files.find((file) => file.kind === kind) ?? null,
+    );
     localStorage.setItem(
       "shepherd-local-settings",
       JSON.stringify({
-        lastDepartmentReferencePath: file.path,
+        lastTableDefinitionPath: files[0]!.path,
+        lastDepartmentReferencePath: files[1]!.path,
+        lastKbnDefinitionPath: files[2]!.path,
         kbnDefinitions: [
-          { category_kbn_code: "KBN_PRODUCT_MANAGEMENT", kbn_name: "Shepherd", kbn_value: "1" },
+          {
+            category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+            kbn_name: "Shepherd",
+            kbn_value: "old",
+            order_no: 1,
+            invalid_flg: false,
+          },
         ],
         kbnSource: {
-          name: "区分.json",
-          path: null,
-          size: 42,
+          name: "区分.xlsx",
+          path: files[2]!.path,
           loadedAt: "2026-10-10T00:00:00.000Z",
         },
       }),
@@ -165,14 +197,140 @@ describe("conversion input boundaries", () => {
         </AppStateProvider>,
       );
     });
-    await waitFor(() =>
-      expect(state.conversion.departmentReference?.rows[0]?.departmentId).toBe(123),
-    );
-    expect(fileFromPath).toHaveBeenCalledWith("departmentReference", file.path);
-    expect(state.conversion.kbnDefinitionFile).toMatchObject({ name: "区分.json", size: 42 });
-    expect(services.kbnDefinition.load).not.toHaveBeenCalled();
+    await waitFor(() => expect(state.settings.kbnDefinitions[0]?.kbn_value).toBe("1"));
+    expect(state.conversion.tableDefinition).not.toBeNull();
+    expect(state.conversion.departmentReference?.rows[0]?.departmentId).toBe(123);
+    expect(state.conversion.kbnDefinitionFile).toEqual(files[2]);
+    for (const file of files) expect(fileFromPath).toHaveBeenCalledWith(file.kind, file.path);
+    expect(services.kbnDefinition.load).toHaveBeenCalledWith(files[2]);
+    expect(state.conversion.referenceLoading).toBe(false);
     act(() => state.setSettings(defaultSettings));
     expect(state.conversion.kbnDefinitionFile).toBeNull();
+  });
+
+  it("blocks stale KBN snapshots when the remembered workbook is missing", async () => {
+    localStorage.setItem(
+      "shepherd-local-settings",
+      JSON.stringify({
+        lastKbnDefinitionPath: "C:\\missing.xlsx",
+        kbnDefinitions: [
+          {
+            category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+            kbn_name: "Shepherd",
+            kbn_value: "old",
+            order_no: 1,
+            invalid_flg: false,
+          },
+        ],
+        kbnSource: {
+          name: "missing.xlsx",
+          path: "C:\\missing.xlsx",
+          loadedAt: "2026-10-10T00:00:00.000Z",
+        },
+      }),
+    );
+    await act(async () => {
+      render(
+        <AppStateProvider>
+          <Probe />
+        </AppStateProvider>,
+      );
+    });
+    expect(state.settings.kbnDefinitions).toEqual([]);
+    expect(state.conversion.kbnDefinitionFile).toBeNull();
+    expect(state.conversion.kbnDefinitionError).toContain("再選択");
+    expect(state.conversion.referenceLoading).toBe(false);
+    expect(services.kbnDefinition.load).not.toHaveBeenCalled();
+  });
+
+  it("requires browser XLSX reselection after reload instead of restoring a cached snapshot", async () => {
+    localStorage.setItem(
+      "shepherd-local-settings",
+      JSON.stringify({
+        kbnDefinitions: [
+          {
+            category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+            kbn_name: "Shepherd",
+            kbn_value: "old",
+            order_no: 1,
+            invalid_flg: false,
+          },
+        ],
+        kbnSource: { name: "区分.xlsx", path: null, loadedAt: "2026-10-10T00:00:00.000Z" },
+      }),
+    );
+    await act(async () => {
+      render(
+        <AppStateProvider>
+          <Probe />
+        </AppStateProvider>,
+      );
+    });
+    expect(state.settings.kbnDefinitions).toEqual([]);
+    expect(state.conversion.kbnDefinitionFile).toBeNull();
+    expect(state.conversion.kbnDefinitionError).toContain("再選択");
+    expect(services.kbnDefinition.load).not.toHaveBeenCalled();
+  });
+
+  it("does not reactivate a browser cached snapshot when an unrelated preference is saved", async () => {
+    localStorage.setItem(
+      "shepherd-local-settings",
+      JSON.stringify({
+        kbnDefinitions: [
+          {
+            category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+            kbn_name: "Shepherd",
+            kbn_value: "old",
+            order_no: 1,
+            invalid_flg: false,
+          },
+        ],
+        kbnSource: { name: "区分.xlsx", path: null, loadedAt: "2026-10-10T00:00:00.000Z" },
+      }),
+    );
+    await act(async () => {
+      render(
+        <AppStateProvider>
+          <Probe />
+        </AppStateProvider>,
+      );
+    });
+    await act(async () => state.toggleDark());
+    expect(state.settings.theme).toBe("dark");
+    expect(state.settings.kbnDefinitions).toEqual([]);
+    expect(state.conversion.kbnDefinitionError).toContain("再選択");
+  });
+
+  it("does not overwrite a newly selected KBN workbook with a late startup path lookup", async () => {
+    let complete!: (file: SelectedFile) => void;
+    vi.mocked(fileFromPath).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    localStorage.setItem(
+      "shepherd-local-settings",
+      JSON.stringify({ lastKbnDefinitionPath: "C:\\old.xlsx" }),
+    );
+    await act(async () => {
+      render(
+        <AppStateProvider>
+          <Probe />
+        </AppStateProvider>,
+      );
+    });
+    const current: SelectedFile = {
+      kind: "kbnDefinition",
+      name: "new.xlsx",
+      path: null,
+      extension: ".xlsx",
+      size: 2,
+    };
+    await act(async () => state.setFile(current, "kbnDefinition"));
+    await act(async () => complete({ ...current, name: "old.xlsx", path: "C:\\old.xlsx" }));
+    expect(state.conversion.kbnDefinitionFile).toEqual(current);
+    expect(state.settings.kbnSource?.name).toBe("new.xlsx");
   });
 
   it("does not retain a previous KBN snapshot when a replacement cannot be loaded", async () => {
@@ -185,15 +343,15 @@ describe("conversion input boundaries", () => {
     });
     await act(async () =>
       state.setFile(
-        { kind: "kbnDefinition", name: "valid.json", path: null, extension: ".json", size: 10 },
+        { kind: "kbnDefinition", name: "valid.xlsx", path: null, extension: ".xlsx", size: 10 },
         "kbnDefinition",
       ),
     );
     expect(state.settings.kbnDefinitions).toHaveLength(1);
-    vi.mocked(services.kbnDefinition.load).mockRejectedValueOnce(new Error("不正なJSON"));
+    vi.mocked(services.kbnDefinition.load).mockRejectedValueOnce(new Error("不正なExcel"));
     await act(async () =>
       state.setFile(
-        { kind: "kbnDefinition", name: "invalid.json", path: null, extension: ".json", size: 10 },
+        { kind: "kbnDefinition", name: "invalid.xlsx", path: null, extension: ".xlsx", size: 10 },
         "kbnDefinition",
       ),
     );
@@ -246,19 +404,19 @@ describe("conversion input boundaries", () => {
     });
     const file: SelectedFile = {
       kind: "kbnDefinition",
-      name: "区分.json",
+      name: "区分.xlsx",
       path: null,
-      extension: ".json",
+      extension: ".xlsx",
       size: 42,
     };
     await act(async () => state.setFile(file, "kbnDefinition"));
     await waitFor(() => expect(state.settings.kbnDefinitions).toHaveLength(1));
     expect(state.conversion.kbnDefinitionFile).toEqual(file);
     expect(state.conversion.tableDefinitionFile).toBeNull();
-    expect(state.settings.kbnSource).toMatchObject({ name: "区分.json", size: 42 });
+    expect(state.settings.kbnSource).toMatchObject({ name: "区分.xlsx", size: 42 });
     expect(state.conversion.referenceLoading).toBe(false);
     expect(JSON.parse(localStorage.getItem("shepherd-local-settings")!).kbnSource.name).toBe(
-      "区分.json",
+      "区分.xlsx",
     );
   });
 
@@ -319,9 +477,15 @@ describe("conversion input boundaries", () => {
       state.setSettings({
         ...state.settings,
         kbnDefinitions: [
-          { category_kbn_code: "KBN_PRODUCT_MANAGEMENT", kbn_name: "Shepherd", kbn_value: "7" },
+          {
+            category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+            kbn_name: "Shepherd",
+            kbn_value: "7",
+            order_no: 1,
+            invalid_flg: false,
+          },
         ],
-        kbnSource: { name: "区分.json", path: null, loadedAt: "2026-10-10T00:00:00.000Z" },
+        kbnSource: { name: "区分.xlsx", path: null, loadedAt: "2026-10-10T00:00:00.000Z" },
       }),
     );
     await waitFor(() => expect(state.conversion.generatedSql).toBeNull());
@@ -338,7 +502,7 @@ describe("conversion input boundaries", () => {
     });
     act(() =>
       state.setFile(
-        { kind: "kbnDefinition", name: "区分.json", path: null, extension: ".json", size: 10 },
+        { kind: "kbnDefinition", name: "区分.xlsx", path: null, extension: ".xlsx", size: 10 },
         "tableDefinition",
       ),
     );
@@ -358,19 +522,25 @@ describe("conversion input boundaries", () => {
         </AppStateProvider>,
       );
     });
-    expect(state.startupError).toContain("KBN定義");
+    expect(state.startupError).toContain("区分名称マスタ");
     await act(async () =>
       state.setFile(
         { kind: "tableDefinition", name: "定義.xlsx", path: null, extension: ".xlsx", size: 10 },
         "tableDefinition",
       ),
     );
-    expect(state.startupError).toContain("KBN定義");
+    expect(state.startupError).toContain("区分名称マスタ");
     act(() =>
       state.setSettings({
         ...state.settings,
         kbnDefinitions: [
-          { category_kbn_code: "KBN_PRODUCT_MANAGEMENT", kbn_name: "Shepherd", kbn_value: "7" },
+          {
+            category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+            kbn_name: "Shepherd",
+            kbn_value: "7",
+            order_no: 1,
+            invalid_flg: false,
+          },
         ],
         kbnSourceError: null,
       }),

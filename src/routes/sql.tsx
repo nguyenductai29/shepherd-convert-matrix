@@ -104,7 +104,11 @@ function SqlPage() {
     return (
       <>
         <PageHeader title="SQLプレビュー" />
-        <div className="p-8">
+        <div
+          data-page-content="sql"
+          data-primary-scroll="sql-empty"
+          className="min-h-0 flex-1 overflow-auto px-5 py-3 xl:px-6"
+        >
           <ErrorAlert
             title={
               conversion.errorMessage ??
@@ -135,7 +139,7 @@ function SqlPage() {
     );
 
   return (
-    <div className="flex h-screen flex-col">
+    <div data-page-content="sql" className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <PageHeader
         title="SQLプレビュー"
         actions={
@@ -160,7 +164,7 @@ function SqlPage() {
         }
       />
       {conversion.errorMessage && (
-        <div className="px-8 py-3">
+        <div className="max-h-32 shrink-0 overflow-auto px-5 py-3">
           <ErrorAlert title={conversion.errorMessage}>
             {conversion.errorDetail && (
               <details>
@@ -171,7 +175,7 @@ function SqlPage() {
           </ErrorAlert>
         </div>
       )}
-      <div className="flex items-center gap-3 border-b px-6 py-2">
+      <div className="flex shrink-0 items-center gap-3 border-b px-5 py-2">
         <input
           className="h-8 w-72 rounded border bg-background px-3 text-xs"
           value={query}
@@ -195,7 +199,7 @@ function SqlPage() {
         )}
         {saving && <span className="text-xs">ファイル出力中</span>}
       </div>
-      <div className="grid grid-cols-4 divide-x border-b bg-card text-xs">
+      <div className="grid shrink-0 grid-cols-4 divide-x border-b bg-card text-xs">
         {[
           ["対象DB", result.targetDb],
           ["対象テーブル数", `${sections.length}`],
@@ -209,7 +213,10 @@ function SqlPage() {
         ))}
       </div>
       <div className="flex min-h-0 flex-1">
-        <nav className="w-60 shrink-0 overflow-auto border-r bg-card p-2">
+        <nav
+          data-primary-scroll="sql-tables"
+          className="min-h-0 w-52 shrink-0 overflow-auto border-r bg-card p-2 xl:w-60"
+        >
           <p className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground">テーブル</p>
           {sections.map((s) => (
             <button
@@ -231,7 +238,7 @@ function SqlPage() {
             </button>
           ))}
         </nav>
-        <div className="min-w-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           <SQLCodeViewer sql={generatedSql} selected={selected} search={query} />
         </div>
       </div>

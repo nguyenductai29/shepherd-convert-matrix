@@ -29,7 +29,7 @@ export function StepProgress({
   busy?: boolean;
 }) {
   return (
-    <ol className="flex items-center gap-0 rounded-md border bg-card px-4 py-3">
+    <ol className="flex shrink-0 items-center gap-0 rounded-md border bg-card px-3 py-2">
       {STEPS.map((s, i) => {
         const done = i < current && errorAt !== i;
         const active = i === current;
@@ -77,28 +77,51 @@ export function StepProgress({
 }
 
 /** Selected file info: name, local path, extension, size. */
-export function SelectedFileInfo({ file, onClear }: { file: SelectedFile; onClear?: () => void }) {
+export function SelectedFileInfo({
+  file,
+  onClear,
+  compact = false,
+  loaded = false,
+}: {
+  file: SelectedFile;
+  onClear?: () => void;
+  compact?: boolean;
+  loaded?: boolean;
+}) {
   return (
-    <div className="flex items-start gap-3 rounded-md border bg-background px-3 py-2.5">
-      <FileSpreadsheet className="mt-0.5 h-5 w-5 shrink-0 text-success" />
+    <div
+      className={cn(
+        "flex min-w-0 items-start rounded-md",
+        compact ? "gap-2" : "gap-3 border bg-background px-3 py-2.5",
+      )}
+    >
+      {!compact && <FileSpreadsheet className="mt-0.5 h-5 w-5 shrink-0 text-success" />}
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="truncate font-mono text-xs font-medium">{file.name}</p>
+        <p className="truncate font-mono text-xs font-medium" title={file.name}>
+          {file.name}
+        </p>
         <p
           className="truncate font-mono text-[11px] text-muted-foreground"
           title={file.path ?? undefined}
         >
           {file.path ?? "（ブラウザプレビューではローカルパスを取得できません）"}
         </p>
-        <p className="text-[11px] text-muted-foreground">
-          <span className="font-mono">{file.extension}</span> ・ {formatBytes(file.size)} ・ 更新:{" "}
-          {file.modifiedAt ? new Date(file.modifiedAt).toLocaleString("ja-JP") : "—"}
+        <p className="truncate text-[11px] text-muted-foreground">
+          <span className="font-mono">{file.extension}</span> ・ {formatBytes(file.size)}
+          {!compact && (
+            <>
+              {" "}
+              ・ 更新: {file.modifiedAt ? new Date(file.modifiedAt).toLocaleString("ja-JP") : "—"}
+            </>
+          )}
         </p>
+        {compact && <StatusBadge status="success" label={loaded ? "読込済み" : "選択済み"} />}
       </div>
-      <StatusBadge status="success" label="選択済み" />
+      {!compact && <StatusBadge status="success" label={loaded ? "読込済み" : "選択済み"} />}
       {onClear && (
         <button
           onClick={onClear}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="選択を解除"
         >
           <X className="h-4 w-4" />
@@ -154,7 +177,13 @@ function useFileSelection(kind: ConversionFileKind) {
 }
 
 /** Large drop area + native picker. Used for the master file. */
-export function FileDropzone({ kind }: { kind: ConversionFileKind }) {
+export function FileDropzone({
+  kind,
+  compact = false,
+}: {
+  kind: ConversionFileKind;
+  compact?: boolean;
+}) {
   const { conversion, setFile } = useAppState();
   const file = conversion[fileKeys[kind]];
   const { pick, accept, hiddenInput } = useFileSelection(kind);
@@ -207,6 +236,56 @@ export function FileDropzone({ kind }: { kind: ConversionFileKind }) {
     };
   }, [kind]);
   const exts = FILE_RULES[kind].extensions.map((e) => "." + e).join(" / ");
+  const busy = conversion.referenceLoading || PROCESSING.includes(conversion.conversionStatus);
+
+  if (compact)
+    return (
+      <div
+        ref={dropArea}
+        data-file-card={kind}
+        className={cn(
+          "min-w-0 space-y-2 rounded-md",
+          drag && "bg-info-soft outline outline-primary",
+        )}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDrag(true);
+        }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDrag(false);
+          if (isDesktop()) return;
+          const dropped = event.dataTransfer.files?.[0];
+          if (dropped) accept(fromBrowserFile(kind, dropped));
+        }}
+      >
+        {file ? (
+          <SelectedFileInfo
+            file={file}
+            compact
+            {...(!busy ? { onClear: () => setFile(null, kind) } : {})}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={pick}
+            disabled={busy}
+            className="flex min-h-14 w-full items-center gap-2 rounded-md border border-dashed p-2 text-left text-xs text-muted-foreground"
+          >
+            <UploadCloud className="h-5 w-5 shrink-0" />
+            <span>
+              ドロップまたは選択<span className="mt-1 block font-mono text-[11px]">{exts}</span>
+            </span>
+          </button>
+        )}
+        <Button variant="outline" size="sm" onClick={pick} disabled={busy} className="h-7 text-xs">
+          <FolderOpen />
+          {file ? "ファイルを変更" : "ファイルを選択"}
+        </Button>
+        {hiddenInput}
+      </div>
+    );
 
   return (
     <div className="space-y-3">
@@ -256,28 +335,58 @@ export function FileDropzone({ kind }: { kind: ConversionFileKind }) {
 }
 
 /** Compact picker button + file info. Used for the table definition file. */
-export function FilePickerCard({ kind }: { kind: ConversionFileKind }) {
-  const { conversion, setFile } = useAppState();
+export function FilePickerCard({
+  kind,
+  compact = false,
+}: {
+  kind: ConversionFileKind;
+  compact?: boolean;
+}) {
+  const { conversion, setFile, settings } = useAppState();
   const file = conversion[fileKeys[kind]];
   const { pick, hiddenInput } = useFileSelection(kind);
+  const loaded =
+    kind === "tableDefinition"
+      ? !!conversion.tableDefinition
+      : kind === "departmentReference"
+        ? !!conversion.departmentReference
+        : kind === "kbnDefinition"
+          ? settings.kbnDefinitions.length > 0
+          : false;
+  const error =
+    kind === "tableDefinition"
+      ? conversion.tableDefinitionError
+      : kind === "departmentReference"
+        ? conversion.departmentReferenceError
+        : kind === "kbnDefinition"
+          ? (conversion.kbnDefinitionError ?? settings.kbnSourceError)
+          : null;
   return (
-    <div className="space-y-3">
+    <div data-file-card={kind} className={cn("min-w-0", compact ? "space-y-2" : "space-y-3")}>
       {file ? (
         <SelectedFileInfo
           file={file}
+          compact={compact}
+          loaded={loaded}
           {...(!conversion.referenceLoading && !PROCESSING.includes(conversion.conversionStatus)
             ? { onClear: () => setFile(null, kind) }
             : {})}
         />
       ) : (
-        <div className="flex items-center gap-3 rounded-md border border-dashed bg-background p-3 text-xs text-muted-foreground">
-          <FileSpreadsheet className="h-5 w-5" />
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-md border border-dashed bg-background text-xs text-muted-foreground",
+            compact ? "min-h-14 p-2" : "p-3",
+          )}
+        >
+          <FileSpreadsheet className="h-5 w-5 shrink-0" />
           未選択（対応形式: {FILE_RULES[kind].extensions.map((e) => "." + e).join(", ")}）
         </div>
       )}
       <Button
         variant="outline"
         size="sm"
+        className={compact ? "h-7 text-xs" : undefined}
         onClick={pick}
         disabled={conversion.referenceLoading || PROCESSING.includes(conversion.conversionStatus)}
       >
@@ -285,9 +394,16 @@ export function FilePickerCard({ kind }: { kind: ConversionFileKind }) {
         {file ? "ファイルを変更" : "ファイルを選択"}
       </Button>
       {hiddenInput}
-      {kind === "tableDefinition" && conversion.tableDefinitionError && (
-        <p role="alert" className="whitespace-pre-wrap text-xs text-destructive">
-          {conversion.tableDefinitionError}
+      {error && (
+        <p
+          role="alert"
+          title={error}
+          className={cn(
+            "text-xs text-destructive",
+            compact ? "line-clamp-2" : "whitespace-pre-wrap",
+          )}
+        >
+          {error}
         </p>
       )}
     </div>

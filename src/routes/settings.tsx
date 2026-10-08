@@ -21,7 +21,7 @@ function LocalPathsSection() {
   const rows: [string, string | null][] = [
     ["前回のテーブル定義書", settings.lastTableDefinitionPath],
     ["部門マスタ", settings.lastDepartmentReferencePath],
-    ["区分名称マスタ", settings.kbnSource?.path ?? settings.kbnSource?.name ?? null],
+    ["区分名称マスタ", settings.lastKbnDefinitionPath ?? settings.kbnSource?.name ?? null],
     ["前回のマスタフォルダ", settings.lastMasterDirectory],
     ["前回の出力フォルダ", settings.lastOutputDirectory],
   ];
@@ -48,12 +48,18 @@ function LocalPathsSection() {
     >
       <div className="divide-y">
         {rows.map(([label, value]) => (
-          <div key={label} className="grid grid-cols-[200px_1fr_auto] items-center gap-4 px-4 py-3">
+          <div
+            key={label}
+            className="grid grid-cols-[180px_minmax(0,1fr)_auto] items-center gap-4 px-4 py-3"
+          >
             <span className="text-sm">{label}</span>
-            <code className="truncate font-mono text-xs text-muted-foreground">
+            <code
+              className="truncate font-mono text-xs text-muted-foreground"
+              title={value ?? undefined}
+            >
               {value ?? "未設定"}
             </code>
-            {value && desktop && (label !== "区分名称マスタ" || settings.kbnSource?.path) ? (
+            {value && desktop && (label !== "区分名称マスタ" || settings.lastKbnDefinitionPath) ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -150,9 +156,13 @@ function SettingsPage() {
           </Button>
         }
       />
-      <div className="max-w-4xl space-y-6 p-8">
+      <div
+        data-page-content="settings"
+        data-primary-scroll="settings"
+        className="min-h-0 flex-1 space-y-4 overflow-auto px-5 py-3 xl:px-6"
+      >
         <LocalPathsSection />
-        <fieldset disabled={busy} className="space-y-6">
+        <fieldset disabled={busy} className="space-y-4">
           <Section title="基本設定">
             <div className="divide-y">
               <Row label="SQL出力文字コード">

@@ -25,9 +25,14 @@ function HistoryPage() {
   return (
     <>
       <PageHeader title="変換履歴" subtitle={`全 ${history.length} 件`} />
-      <div className="p-8">
-        <Section>
-          <ConversionHistoryTable rows={history} />
+      <div
+        data-page-content="history"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3 xl:px-6"
+      >
+        <Section className="min-h-0 flex-1 overflow-hidden">
+          <div data-primary-scroll="history" className="h-full overflow-auto">
+            <ConversionHistoryTable rows={history} />
+          </div>
         </Section>
       </div>
     </>

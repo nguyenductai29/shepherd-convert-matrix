@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/state/app-state";
 import { Switch } from "@/components/ui/switch";
+import officialLogo from "../../../assets/ShepherdSQL.png";
 
 const items = [
   { to: "/", label: "ダッシュボード", icon: LayoutDashboard },
@@ -33,21 +34,22 @@ export function AppSidebar() {
   const active = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
 
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
-      <div className="flex items-center gap-2.5 border-b border-sidebar-border px-4 py-4">
-        <img
-          src="/shepherd-icon.png"
-          alt=""
-          width={32}
-          height={32}
-          className="h-8 w-8 shrink-0 rounded-md object-contain"
-        />
-        <div className="leading-tight">
-          <p className="text-sm font-semibold text-foreground">Shepherd</p>
-          <p className="text-[11px] text-muted-foreground">Master SQL Generator</p>
-        </div>
+    <aside
+      data-app-sidebar
+      className="flex h-screen min-h-0 w-60 shrink-0 flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground"
+    >
+      <div className="shrink-0 border-b border-sidebar-border px-3 py-3">
+        <svg
+          role="img"
+          aria-label="Shepherd Master SQL Generator"
+          viewBox="55 270 1365 520"
+          className="block w-full rounded-md bg-white"
+        >
+          <title>Shepherd Master SQL Generator</title>
+          <image href={officialLogo} width="1448" height="1086" />
+        </svg>
       </div>
-      <nav className="flex-1 space-y-0.5 p-2">
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-auto p-2">
         {items.map((it) => (
           <Link
             key={it.to}
@@ -69,7 +71,7 @@ export function AppSidebar() {
           </Link>
         ))}
       </nav>
-      <div className="space-y-3 border-t border-sidebar-border p-4">
+      <div className="shrink-0 space-y-3 border-t border-sidebar-border p-4">
         <label className="flex items-center justify-between text-xs">
           <span className="flex items-center gap-2">
             {dark ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}

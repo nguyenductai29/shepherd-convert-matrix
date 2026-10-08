@@ -11,11 +11,14 @@ describe("local file handling", () => {
     expect(isAllowed("departmentReference", "departments.xlsm")).toBe(false);
     expect(new TextDecoder().decode(await readSelectedFile(selected))).toBe("reference");
   });
-  it("reads a browser KBN JSON source locally without accepting it as a workbook", async () => {
-    const json = '[{"category_kbn_code":"KBN_UNIT","kbn_name":"個","kbn_value":"8"}]';
-    const selected = fromBrowserFile("kbnDefinition", new File([json], "区分.JSON"));
-    expect(new TextDecoder().decode(await readSelectedFile(selected))).toBe(json);
-    expect(isAllowed("kbnDefinition", "区分.xlsx")).toBe(false);
+  it("reads only XLSX KBN sources and rejects legacy JSON before reading", async () => {
+    const selected = fromBrowserFile("kbnDefinition", new File(["workbook"], "区分.XLSX"));
+    expect(new TextDecoder().decode(await readSelectedFile(selected))).toBe("workbook");
+    expect(isAllowed("kbnDefinition", "区分.json")).toBe(false);
+    expect(isAllowed("kbnDefinition", "区分.xlsm")).toBe(false);
+    await expect(
+      readSelectedFile(fromBrowserFile("kbnDefinition", new File(["[]"], "区分.json"))),
+    ).rejects.toThrow("対応していない");
     expect(isAllowed("master", "区分.json")).toBe(false);
     expect(isAllowed("tableDefinition", "区分.json")).toBe(false);
   });

@@ -93,9 +93,9 @@ function RootComponent() {
     <>
       <HeadContent />
       <AppStateProvider>
-        <div className="flex min-h-screen w-full">
+        <div data-app-shell className="flex h-screen min-h-0 w-full overflow-hidden">
           <AppSidebar />
-          <main className="min-w-0 flex-1">
+          <main data-app-main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <StartupNotice />
             <Outlet />
           </main>
@@ -109,7 +109,7 @@ function RootComponent() {
 function StartupNotice() {
   const { startupError } = useAppState();
   return startupError ? (
-    <div className="px-8 pt-4">
+    <div className="max-h-32 shrink-0 overflow-auto px-5 pt-3">
       <ErrorAlert title={startupError}>
         <Link to="/settings" className="underline">
           設定を確認

@@ -9,7 +9,7 @@ export const FILE_RULES: Record<FileKind, { label: string; extensions: string[] 
   tableDefinition: { label: "テーブル定義書", extensions: ["xlsx"] },
   departmentReference: { label: "部門マスタ", extensions: ["xlsx"] },
   master: { label: "マスタ整備ファイル", extensions: ["xlsm", "xlsx"] },
-  kbnDefinition: { label: "区分名称マスタ", extensions: ["json"] },
+  kbnDefinition: { label: "区分名称マスタ", extensions: ["xlsx"] },
 };
 
 export function isAllowed(kind: FileKind, name: string) {
@@ -32,8 +32,8 @@ export async function pickFileNative(kind: FileKind): Promise<SelectedFile | nul
           : undefined
         : kind === "master"
           ? (settings.lastMasterDirectory ?? undefined)
-          : settings.kbnSource?.path
-            ? dirname(settings.kbnSource.path)
+          : settings.lastKbnDefinitionPath
+            ? dirname(settings.lastKbnDefinitionPath)
             : undefined;
 
   const rule = FILE_RULES[kind];

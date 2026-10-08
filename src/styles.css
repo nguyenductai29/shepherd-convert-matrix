@@ -159,10 +159,17 @@
 }
 
 @layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
   * {
     border-color: var(--color-border);
   }
   body {
+    margin: 0;
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);

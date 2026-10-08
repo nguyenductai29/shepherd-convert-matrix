@@ -60,7 +60,7 @@ describe("department filename and exact lookup", () => {
     "unrelated.xlsx",
   ])("rejects template or invalid filename %s", (name) => {
     expect(() => extractDepartmentCode(name)).toThrow(
-      "マスタファイル名から部門コードを取得できませんでした。",
+      "ファイル名がShepherdマスタの命名規則と一致しません。",
     );
   });
 
@@ -74,17 +74,25 @@ describe("department filename and exact lookup", () => {
     );
   });
 
-  it("rejects duplicate department codes including an inactive duplicate", () => {
+  it("rejects duplicate active department codes", () => {
     expect(() =>
-      resolveDepartment("HPK", [
-        department,
-        { ...department, departmentId: 124, invalidFlg: true },
-      ]),
+      resolveDepartment("HPK", [department, { ...department, departmentId: 124 }]),
     ).toThrow("同一の部門コードが部門マスタに複数存在します。");
   });
 
-  it("rejects a selected inactive department", () => {
-    expect(() => resolveDepartment("HPK", [{ ...department, invalidFlg: true }])).toThrow("無効");
+  it("ignores inactive duplicates when exactly one matching active department exists", () => {
+    expect(
+      resolveDepartment("HPK", [
+        { ...department, departmentId: 124, invalidFlg: true },
+        department,
+      ]),
+    ).toEqual(department);
+  });
+
+  it("reports no active match when only inactive departments exist", () => {
+    expect(() => resolveDepartment("HPK", [{ ...department, invalidFlg: true }])).toThrow(
+      "部門コードに対応する部署が見つかりません。",
+    );
   });
 });
 
@@ -148,7 +156,7 @@ describe("department reference workbook", () => {
     ).toThrow("invalid_flg");
   });
 
-  it("reads cached formulas without executing them and retains inactive rows for duplicate checks", () => {
+  it("reads cached formulas without executing them and retains the inactive flag", () => {
     const input = workbook([
       { formula: "100+23", result: 123 },
       "HPK",

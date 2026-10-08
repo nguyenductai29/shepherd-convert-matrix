@@ -158,6 +158,23 @@ describe("conversion error gates", () => {
       }),
     );
   });
+  it("blocks a failed KBN source even if stale definition rows are supplied", async () => {
+    const state = {
+      ...validState(),
+      ...references,
+      kbnDefinitionError: "区分名称マスタを再選択してください。",
+    };
+    const patch = vi.fn();
+    await runAnalysis(state, patch, settings);
+    expect(mocks.check).not.toHaveBeenCalled();
+    expect(mocks.parse).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        errorMessage: state.kbnDefinitionError,
+        conversionStatus: "failed",
+      }),
+    );
+  });
   it("passes one serializable context to the worker and publishes the resolved department", async () => {
     const state = { ...validState(), ...references };
     mocks.check.mockResolvedValueOnce({ passed: true, items: [] });

@@ -9,9 +9,15 @@ const native = vi.hoisted(() => ({
   settings: new Map<string, unknown>(),
   directory: "C:\\出力" as string | null,
   failWrite: false,
+  open: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: async () => native.directory }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: async (options: unknown) => {
+    native.open(options);
+    return native.directory;
+  },
+}));
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: async () => ({
     entries: async () => [...native.settings.entries()],
@@ -93,6 +99,7 @@ describe("native output and file access", () => {
     native.settings.clear();
     native.directory = "C:\\出力";
     native.failWrite = false;
+    native.open.mockClear();
   });
   afterEach(() => Reflect.deleteProperty(window, "__TAURI_INTERNALS__"));
 
@@ -150,15 +157,29 @@ describe("native output and file access", () => {
     expect(await fileFromPath("master", "C:\\不存在.xlsm")).toBeNull();
   });
 
-  it("selects and rereads native KBN JSON without persisting an unvalidated source", async () => {
-    const path = "C:\\定義\\区分.json";
-    const json = '[{"category_kbn_code":"KBN_UNIT","kbn_name":"個","kbn_value":"8"}]';
-    native.files.set(path, new Uint8Array(new TextEncoder().encode(json)));
+  it("selects native KBN XLSX with an Excel-only filter and remembers the previous source directory", async () => {
+    const path = "C:\\定義\\区分.xlsx";
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet("区分").addRows([
+      ["category_kbn_code", "kbn_value", "kbn_name", "order_no", "invalid_flg"],
+      ["KBN_UNIT", "8", "個", 1, 0],
+    ]);
+    const bytes = new Uint8Array(await workbook.xlsx.writeBuffer());
+    native.files.set(path, bytes);
+    native.settings.set("lastKbnDefinitionPath", "C:\\以前\\区分.xlsx");
     native.directory = path;
     const selected = await pickFileNative("kbnDefinition");
     expect(selected?.path).toBe(path);
-    expect(new TextDecoder().decode(await readSelectedFile(selected!))).toBe(json);
+    expect(native.open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultPath: "C:\\以前",
+        filters: [{ name: "区分名称マスタ", extensions: ["xlsx"] }],
+      }),
+    );
+    expect(new Uint8Array(await readSelectedFile(selected!))).toEqual(bytes);
     expect((await fileFromPath("kbnDefinition", path))?.path).toBe(path);
+    native.files.set("C:\\区分.json", new Uint8Array([91, 93]));
+    expect(await fileFromPath("kbnDefinition", "C:\\区分.json")).toBeNull();
     expect(native.settings.get("kbnSource")).toBeUndefined();
     expect(native.settings.get("lastMasterDirectory")).toBeUndefined();
   });

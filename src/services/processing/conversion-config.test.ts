@@ -155,7 +155,13 @@ describe("confirmed defaults and KBN-backed conversion", () => {
       ...options,
       kbnDefinitions: [
         ...kbnFixture,
-        { category_kbn_code: "KBN_DISPLAY", kbn_name: "組立", kbn_value: "8" },
+        {
+          category_kbn_code: "KBN_DISPLAY",
+          kbn_name: "組立",
+          kbn_value: "8",
+          order_no: 0,
+          invalid_flg: false,
+        },
       ],
     });
     expect(parsed.issues?.filter((issue) => issue.severity === "error")).toEqual([]);
@@ -201,8 +207,20 @@ describe("confirmed defaults and KBN-backed conversion", () => {
       ...options,
       kbnDefinitions: [
         ...kbnFixture,
-        { category_kbn_code: "KBN_UNIT", kbn_name: "%", kbn_value: "percent" },
-        { category_kbn_code: "KBN_PRINT_PATTERN", kbn_name: "部材割当系", kbn_value: "allocation" },
+        {
+          category_kbn_code: "KBN_UNIT",
+          kbn_name: "%",
+          kbn_value: "percent",
+          order_no: 0,
+          invalid_flg: false,
+        },
+        {
+          category_kbn_code: "KBN_PRINT_PATTERN",
+          kbn_name: "部材割当系",
+          kbn_value: "allocation",
+          order_no: 0,
+          invalid_flg: false,
+        },
       ],
     });
     expect(resolved.issues?.filter((issue) => issue.severity === "error")).toEqual([]);

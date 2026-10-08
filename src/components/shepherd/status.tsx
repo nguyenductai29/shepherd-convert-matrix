@@ -92,7 +92,10 @@ function Banner({
     warning: { cls: "border-warning/40 bg-warning-soft text-warning", Icon: AlertTriangle },
   }[tone];
   return (
-    <div role="alert" className={cn("flex items-start gap-3 rounded-md border px-4 py-3", t.cls)}>
+    <div
+      role="alert"
+      className={cn("flex shrink-0 items-start gap-3 rounded-md border px-4 py-3", t.cls)}
+    >
       <t.Icon className="mt-0.5 h-5 w-5 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">{title}</p>
@@ -126,12 +129,19 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4 border-b bg-card px-8 py-5">
-      <div>
+    <div
+      data-page-header
+      className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b bg-card px-5 py-3 xl:px-6"
+    >
+      <div className="min-w-0 flex-1">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+        {subtitle && (
+          <p className="mt-1 truncate text-xs text-muted-foreground" title={subtitle}>
+            {subtitle}
+          </p>
+        )}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
@@ -142,12 +152,14 @@ export function StatCard({
   icon: Icon,
   tone = "default",
   hint,
+  compact = false,
 }: {
   label: string;
   value: ReactNode;
   icon: typeof Info;
   tone?: "default" | "success" | "error" | "warning" | "info";
   hint?: string;
+  compact?: boolean;
 }) {
   const toneCls = {
     default: "text-foreground",
@@ -157,15 +169,25 @@ export function StatCard({
     info: "text-info",
   }[tone];
   return (
-    <div className="rounded-md border bg-card p-4">
+    <div className={cn("min-w-0 rounded-md border bg-card", compact ? "px-3 py-2" : "p-4")}>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{label}</span>
         <Icon className={cn("h-4 w-4", toneCls)} />
       </div>
-      <div className={cn("mt-2 font-mono text-2xl font-semibold tabular-nums", toneCls)}>
+      <div
+        className={cn(
+          "font-mono font-semibold tabular-nums",
+          compact ? "mt-1 text-xl" : "mt-2 text-2xl",
+          toneCls,
+        )}
+      >
         {value}
       </div>
-      {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
+      {hint && (
+        <p className="mt-1 truncate text-[11px] text-muted-foreground" title={hint}>
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -182,9 +204,9 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-md border bg-card", className)}>
+    <section className={cn("min-w-0 rounded-md border bg-card", className)}>
       {title && (
-        <div className="flex items-center justify-between border-b px-4 py-2.5">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5">
           <h2 className="text-sm font-semibold">{title}</h2>
           {actions}
         </div>

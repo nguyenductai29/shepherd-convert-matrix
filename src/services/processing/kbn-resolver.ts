@@ -11,11 +11,11 @@ function definitionKey(category: string, value: string): string {
   return JSON.stringify([category, value]);
 }
 
-/** Reads local m_kbn_definition JSON exports. Inactive entries never participate
- * in lookups, and conflicting active definitions cannot be loaded. */
+/** Validates normalized reference rows restored from local settings. External
+ * files enter through the XLSX reference parser, never through this helper. */
 export function parseKbnDefinitions(source: unknown): KbnDefinition[] {
   if (!Array.isArray(source)) {
-    throw new Error("区分定義は m_kbn_definition の JSON 配列で指定してください。");
+    throw new Error("保存された区分定義の形式が不正です。区分名称マスタを再選択してください。");
   }
   const result: KbnDefinition[] = [];
   const byName = new Map<string, string>();
@@ -38,19 +38,37 @@ export function parseKbnDefinitions(source: unknown): KbnDefinition[] {
       "kbn_value",
       row,
     );
-    const flag = entry["invalid_flg"];
+    const flag = entry["invalid_flg"] === undefined ? false : entry["invalid_flg"];
     if (
-      flag !== undefined &&
       flag !== 0 &&
       flag !== "0" &&
+      flag !== "b'0'" &&
       flag !== false &&
       flag !== 1 &&
       flag !== "1" &&
+      flag !== "b'1'" &&
       flag !== true
     ) {
       throw new Error(`区分定義の ${row} 行目: invalid_flg は 0 または 1 で指定してください。`);
     }
-    if (flag === 1 || flag === "1" || flag === true) continue;
+    const invalid = flag === 1 || flag === "1" || flag === "b'1'" || flag === true;
+    const rawOrder = entry["order_no"] === undefined ? 0 : entry["order_no"];
+    const order =
+      typeof rawOrder === "number" ||
+      (typeof rawOrder === "string" && /^[+-]?\d+$/.test(rawOrder.trim()))
+        ? Number(rawOrder)
+        : NaN;
+    if (!Number.isInteger(order) || order < -2147483648 || order > 2147483647) {
+      throw new Error(`区分定義の ${row} 行目: order_no は整数で指定してください。`);
+    }
+    result.push({
+      category_kbn_code: category,
+      kbn_name: name,
+      kbn_value: value,
+      order_no: order,
+      invalid_flg: invalid,
+    });
+    if (invalid) continue;
     const nameKey = definitionKey(category, name);
     const valueKey = definitionKey(category, value);
     const existingValue = byName.get(nameKey);
@@ -60,15 +78,13 @@ export function parseKbnDefinitions(source: unknown): KbnDefinition[] {
         `区分定義が競合しています: ${category} / ${name} に複数の kbn_value (${existingValue}, ${value}) が指定されています。`,
       );
     }
-    if (existingName !== undefined && existingName !== name) {
+    if (existingName !== undefined) {
       throw new Error(
-        `区分定義が競合しています: ${category} / ${value} に複数の kbn_name (${existingName}, ${name}) が指定されています。`,
+        `区分定義が重複しています: ${category} / ${value} に複数の有効な行 (${existingName}, ${name}) が指定されています。`,
       );
     }
-    if (existingValue !== undefined) continue;
     byName.set(nameKey, value);
     byValue.set(valueKey, name);
-    result.push({ category_kbn_code: category, kbn_name: name, kbn_value: value });
   }
   return result;
 }
@@ -79,6 +95,7 @@ export class KbnResolver {
 
   constructor(rows: readonly KbnDefinition[]) {
     for (const row of parseKbnDefinitions(rows)) {
+      if (row.invalid_flg) continue;
       this.byName.set(definitionKey(row.category_kbn_code, row.kbn_name), row.kbn_value);
       this.byValue.set(definitionKey(row.category_kbn_code, row.kbn_value), row.kbn_name);
     }
@@ -94,7 +111,7 @@ export class KbnResolver {
     return value;
   }
 
-  resolveName(category: string, value: string): string {
+  resolveByValue(category: string, value: string): string {
     const name = this.byValue.get(definitionKey(category.trim(), value.trim()));
     if (name === undefined) {
       throw new Error(
@@ -102,5 +119,9 @@ export class KbnResolver {
       );
     }
     return name;
+  }
+
+  resolveName(category: string, value: string): string {
+    return this.resolveByValue(category, value);
   }
 }

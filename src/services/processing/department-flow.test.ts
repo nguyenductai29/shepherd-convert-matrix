@@ -45,7 +45,7 @@ describe("department reference conversion boundary", () => {
       expect(parsed.data).toEqual([]);
       expect(
         parsed.issues?.some(
-          (item) => item.severity === "error" && item.message.includes("マスタファイル名"),
+          (item) => item.severity === "error" && item.message.includes("命名規則"),
         ),
       ).toBe(true);
       expect(() =>

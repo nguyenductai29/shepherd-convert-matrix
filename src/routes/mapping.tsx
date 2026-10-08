@@ -27,7 +27,11 @@ function MappingPage() {
         subtitle="Excel → DB のカラム対応（読み取り専用）"
         actions={<FixedMappingBadge />}
       />
-      <div className="space-y-4 p-8">
+      <div
+        data-page-content="mapping"
+        data-primary-scroll="mapping"
+        className="min-h-0 flex-1 space-y-4 overflow-auto px-5 py-3 xl:px-6"
+      >
         <InfoAlert title="お客様確定済みのExcelフォーマットに基づく固定マッピングです。">
           マッピングの変更はできません。フォーマット変更が必要な場合は開発チームへご連絡ください。
         </InfoAlert>

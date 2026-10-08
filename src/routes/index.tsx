@@ -37,7 +37,11 @@ function Dashboard() {
           </Button>
         }
       />
-      <div className="space-y-6 p-8">
+      <div
+        data-page-content="dashboard"
+        data-primary-scroll="dashboard"
+        className="min-h-0 flex-1 space-y-4 overflow-auto px-5 py-3 xl:px-6"
+      >
         <div className="grid grid-cols-4 gap-3">
           <StatCard
             label="対象テーブル数"

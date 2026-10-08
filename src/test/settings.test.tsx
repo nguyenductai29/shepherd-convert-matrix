@@ -4,7 +4,8 @@ import { AppStateProvider, useAppState } from "@/state/app-state";
 import { loadSettings, updateSettings } from "@/services/platform/local-settings";
 import { Route } from "@/routes/settings";
 import { services } from "@/services";
-import { parseKbnDefinitions } from "@/services/processing/kbn-resolver";
+import { parseKbnReferenceFile } from "@/services/processing/kbn-reference";
+import ExcelJS from "exceljs";
 import { readSelectedFile } from "@/services/platform/files";
 import type { KbnDefinition } from "@/models/kbn";
 import { invalidateConversion } from "@/features/conversion/run-conversion";
@@ -15,10 +16,21 @@ const nativeSettings = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
   pauseNextSave: false,
   finishSave: null as (() => void) | null,
+  pauseNextRead: false,
+  finishRead: null as (() => void) | null,
 }));
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: async () => ({
-    entries: async () => [...nativeSettings.values],
+    entries: async () => {
+      const entries = [...nativeSettings.values];
+      if (nativeSettings.pauseNextRead) {
+        nativeSettings.pauseNextRead = false;
+        await new Promise<void>((resolve) => {
+          nativeSettings.finishRead = resolve;
+        });
+      }
+      return entries;
+    },
     set: async (key: string, value: unknown) => {
       nativeSettings.values.set(key, value);
     },
@@ -47,7 +59,13 @@ function Probe() {
   return null;
 }
 const rows = [
-  { category_kbn_code: "KBN_PRODUCT_MANAGEMENT", kbn_name: "Shepherd", kbn_value: "7" },
+  {
+    category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+    kbn_name: "Shepherd",
+    kbn_value: "7",
+    order_no: 1,
+    invalid_flg: false,
+  },
 ];
 
 describe("app settings and conversion reference loading", () => {
@@ -57,8 +75,10 @@ describe("app settings and conversion reference loading", () => {
     nativeSettings.values.clear();
     nativeSettings.pauseNextSave = false;
     nativeSettings.finishSave = null;
+    nativeSettings.pauseNextRead = false;
+    nativeSettings.finishRead = null;
     vi.mocked(services.kbnDefinition.load).mockImplementation(async (file) =>
-      parseKbnDefinitions(JSON.parse(new TextDecoder().decode(await readSelectedFile(file)))),
+      parseKbnReferenceFile(file, await readSelectedFile(file)),
     );
   });
   afterEach(() => {
@@ -79,10 +99,27 @@ describe("app settings and conversion reference loading", () => {
     });
     return view;
   };
-  const selectFile = (contents: string) =>
+  const selectFile = async (items: typeof rows, missingColumns = false) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("区分");
+    sheet.addRow(
+      missingColumns
+        ? ["category_kbn_code"]
+        : ["category_kbn_code", "kbn_value", "kbn_name", "order_no", "invalid_flg"],
+    );
+    for (const row of items)
+      sheet.addRow([
+        row.category_kbn_code,
+        row.kbn_value,
+        row.kbn_name,
+        row.order_no,
+        row.invalid_flg,
+      ]);
+    const bytes = await workbook.xlsx.writeBuffer();
     fireEvent.change(screen.getByLabelText("区分名称マスタファイル"), {
-      target: { files: [new File([contents], "区分.json")] },
+      target: { files: [new File([bytes as BlobPart], "区分.xlsx")] },
     });
+  };
 
   it("keeps only quantity and app settings editable while reference imports persist locally", async () => {
     await openSettings();
@@ -97,22 +134,22 @@ describe("app settings and conversion reference loading", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "設定を保存" }));
     await waitFor(() => expect(state.settings.defaultQuantity).toBe("2.5"));
-    selectFile(JSON.stringify(rows));
+    await selectFile(rows);
     await waitFor(() => expect(state.settings.kbnDefinitions).toEqual(rows));
     expect(await loadSettings()).toMatchObject({
       defaultQuantity: "2.5",
       kbnDefinitions: rows,
-      kbnSource: { name: "区分.json", path: null },
+      kbnSource: { name: "区分.xlsx", path: null },
     });
   });
 
-  it.each(['{"invalid":true}', "[]"])(
+  it.each([true, false])(
     "blocks a replacement invalid reference instead of using stale values: %s",
-    async (contents) => {
+    async (missingColumns) => {
       await openSettings();
-      selectFile(JSON.stringify(rows));
+      await selectFile(rows);
       await waitFor(() => expect(state.settings.kbnDefinitions).toEqual(rows));
-      selectFile(contents);
+      await selectFile([], missingColumns);
       await waitFor(() => expect(state.conversion.referenceLoading).toBe(false));
       expect((await loadSettings()).kbnDefinitions).toEqual([]);
       expect(state.settings.kbnDefinitions).toEqual([]);
@@ -129,7 +166,7 @@ describe("app settings and conversion reference loading", () => {
         }),
     );
     await openSettings();
-    selectFile(JSON.stringify(rows));
+    await selectFile(rows);
     act(() => state.setFile(null, "kbnDefinition"));
     await act(async () => finish(rows));
     expect((await loadSettings()).kbnDefinitions).toEqual([]);
@@ -142,7 +179,7 @@ describe("app settings and conversion reference loading", () => {
     vi.mocked(services.kbnDefinition.load).mockResolvedValue(rows);
     const view = await openSettings();
     nativeSettings.pauseNextSave = true;
-    selectFile(JSON.stringify(rows));
+    await selectFile(rows);
     await waitFor(() => expect(nativeSettings.finishSave).not.toBeNull());
     view.rerender(
       <AppStateProvider>
@@ -176,7 +213,7 @@ describe("app settings and conversion reference loading", () => {
     vi.mocked(services.kbnDefinition.load).mockResolvedValue(rows);
     const view = await openSettings();
     nativeSettings.pauseNextSave = true;
-    selectFile(JSON.stringify(rows));
+    await selectFile(rows);
     await waitFor(() => expect(nativeSettings.finishSave).not.toBeNull());
     view.rerender(
       <AppStateProvider>
@@ -186,14 +223,42 @@ describe("app settings and conversion reference loading", () => {
     const newerRows = [{ ...rows[0]!, kbn_value: "9" }];
     const newerCommit = updateSettings({
       kbnDefinitions: newerRows,
-      kbnSource: { name: "更新.json", path: "C:\\更新.json", loadedAt: "2026-10-10T00:00:00.000Z" },
+      kbnSource: { name: "更新.xlsx", path: "C:\\更新.xlsx", loadedAt: "2026-10-10T00:00:00.000Z" },
     }).then((saved) => state.setSettings(saved));
     await act(async () => {
       nativeSettings.finishSave!();
       await newerCommit;
     });
     expect(state.settings.kbnDefinitions).toEqual(newerRows);
-    expect(state.settings.kbnSource?.name).toBe("更新.json");
+    expect(state.settings.kbnSource?.name).toBe("更新.xlsx");
     expect(state.settings).toEqual(await loadSettings());
+  });
+
+  it("preserves a user-selected workbook when the initial native settings read finishes late", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    nativeSettings.values.set("kbnSource", {
+      name: "old.xlsx",
+      path: null,
+      loadedAt: "2026-10-10T00:00:00.000Z",
+    });
+    nativeSettings.values.set("kbnDefinitions", [{ ...rows[0]!, kbn_value: "old" }]);
+    nativeSettings.pauseNextRead = true;
+    vi.mocked(services.kbnDefinition.load).mockResolvedValue(rows);
+    await openSettings();
+    await waitFor(() => expect(nativeSettings.finishRead).not.toBeNull());
+    await act(async () =>
+      state.setFile(
+        { kind: "kbnDefinition", name: "区分.xlsx", path: null, extension: ".xlsx", size: 1 },
+        "kbnDefinition",
+      ),
+    );
+    await waitFor(() => expect(state.settings.kbnDefinitions).toEqual(rows));
+    await act(async () => {
+      nativeSettings.finishRead!();
+    });
+    expect(state.settings.kbnDefinitions).toEqual(rows);
+    expect(state.settings.kbnSource?.name).toBe("区分.xlsx");
+    expect((await loadSettings()).kbnDefinitions).toEqual(rows);
+    expect(state.conversion.kbnDefinitionError).toBeNull();
   });
 });

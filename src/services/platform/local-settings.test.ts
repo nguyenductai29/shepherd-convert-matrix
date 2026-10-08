@@ -58,15 +58,25 @@ describe("local settings persistence", () => {
 
   it("persists a validated KBN snapshot and its local source across reloads", async () => {
     const kbnDefinitions = [
-      { category_kbn_code: "KBN_PRODUCT_MANAGEMENT", kbn_name: "Shepherd", kbn_value: "7" },
+      {
+        category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+        kbn_name: "Shepherd",
+        kbn_value: "7",
+        order_no: 1,
+        invalid_flg: false,
+      },
     ];
     const kbnSource = {
-      name: "区分.json",
-      path: "C:\\定義\\区分.json",
+      name: "区分.xlsx",
+      path: "C:\\定義\\区分.xlsx",
       loadedAt: "2026-10-10T00:00:00.000Z",
     };
     await updateSettings({ kbnDefinitions, kbnSource });
-    expect(await loadSettings()).toMatchObject({ kbnDefinitions, kbnSource });
+    expect(await loadSettings()).toMatchObject({
+      kbnDefinitions,
+      kbnSource,
+      lastKbnDefinitionPath: kbnSource.path,
+    });
   });
 
   it("ignores obsolete audit, date and KBN overrides instead of restoring guesses", async () => {
@@ -90,23 +100,83 @@ describe("local settings persistence", () => {
         departmentCode: "CUSTOMER",
         kbnDefinitions: [{ category_kbn_code: "KBN_UNIT", kbn_name: "%" }],
         kbnSource: {
-          name: "区分.json",
-          path: "C:\\区分.json",
+          name: "区分.xlsx",
+          path: "C:\\区分.xlsx",
           loadedAt: "2026-10-10T00:00:00.000Z",
         },
       }),
     );
     expect(await loadSettings()).toMatchObject({
       kbnDefinitions: [],
-      kbnSource: { name: "区分.json", path: "C:\\区分.json" },
+      kbnSource: { name: "区分.xlsx", path: "C:\\区分.xlsx" },
       kbnSourceError: expect.stringContaining("再読込"),
     });
     await updateSettings({ sqlComments: false });
     expect((await loadSettings()).kbnSourceError).toContain("再読込");
     await updateSettings({
-      kbnDefinitions: [{ category_kbn_code: "KBN_UNIT", kbn_name: "個", kbn_value: "8" }],
+      kbnDefinitions: [
+        {
+          category_kbn_code: "KBN_UNIT",
+          kbn_name: "個",
+          kbn_value: "8",
+          order_no: 1,
+          invalid_flg: false,
+        },
+      ],
       kbnSourceError: null,
     });
     expect((await loadSettings()).kbnSourceError).toBeNull();
+  });
+
+  it("drops legacy JSON sources and their rows while preserving app preferences", async () => {
+    localStorage.setItem(
+      "shepherd-local-settings",
+      JSON.stringify({
+        theme: "dark",
+        sqlComments: false,
+        lastOutputDirectory: "C:\\出力",
+        kbnSource: {
+          name: "区分.json",
+          path: "C:\\区分.json",
+          loadedAt: "2026-10-10T00:00:00.000Z",
+        },
+        kbnDefinitions: [
+          {
+            category_kbn_code: "KBN_UNIT",
+            kbn_name: "個",
+            kbn_value: "8",
+            order_no: 1,
+            invalid_flg: false,
+          },
+        ],
+      }),
+    );
+    expect(await loadSettings()).toMatchObject({
+      theme: "dark",
+      sqlComments: false,
+      lastOutputDirectory: "C:\\出力",
+      kbnDefinitions: [],
+      kbnSource: null,
+      lastKbnDefinitionPath: null,
+      kbnSourceError: expect.stringContaining(".xlsx"),
+    });
+    await updateSettings({ sqlTransaction: false });
+    expect((await loadSettings()).kbnSourceError).toContain("再選択");
+  });
+
+  it("requires XLSX reselection for legacy KBN rows without source metadata", async () => {
+    localStorage.setItem(
+      "shepherd-local-settings",
+      JSON.stringify({
+        kbnDefinitions: [{ category_kbn_code: "KBN_UNIT", kbn_name: "個", kbn_value: "8" }],
+        sqlComments: false,
+      }),
+    );
+    expect(await loadSettings()).toMatchObject({
+      kbnDefinitions: [],
+      kbnSource: null,
+      sqlComments: false,
+      kbnSourceError: expect.stringContaining("再選択"),
+    });
   });
 });

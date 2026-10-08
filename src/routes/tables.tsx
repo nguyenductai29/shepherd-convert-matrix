@@ -45,9 +45,12 @@ function TablesPage() {
           </Button>
         }
       />
-      <div className="grid grid-cols-[260px_1fr] gap-6 p-8">
-        <div className="space-y-2">
-          <div className="relative">
+      <div
+        data-page-content="tables"
+        className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] gap-4 overflow-hidden px-5 py-3 xl:grid-cols-[260px_minmax(0,1fr)] xl:px-6"
+      >
+        <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+          <div className="relative shrink-0">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q}
@@ -56,7 +59,10 @@ function TablesPage() {
               className="pl-8"
             />
           </div>
-          <div className="rounded-md border bg-card p-1">
+          <div
+            data-primary-scroll="table-list"
+            className="min-h-0 flex-1 overflow-auto rounded-md border bg-card p-1"
+          >
             {list.map((t) => (
               <button
                 key={t.name}
@@ -74,7 +80,9 @@ function TablesPage() {
                 />
                 <span className="min-w-0">
                   <span className="block truncate font-mono text-xs font-medium">{t.name}</span>
-                  <span className="block text-[11px] text-muted-foreground">{t.logical}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {t.logical}
+                  </span>
                 </span>
               </button>
             ))}
@@ -82,9 +90,14 @@ function TablesPage() {
           </div>
         </div>
         {table ? (
-          <TableDefinitionViewer table={table} />
+          <div data-primary-scroll="table-definition" className="min-h-0 min-w-0 overflow-auto">
+            <TableDefinitionViewer table={table} />
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div
+            data-primary-scroll="table-definition"
+            className="min-h-0 min-w-0 space-y-3 overflow-auto"
+          >
             <p className="text-sm text-muted-foreground">
               {conversion.progressMessage ??
                 conversion.errorMessage ??

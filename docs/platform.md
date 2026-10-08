@@ -14,7 +14,7 @@ Build-machine package installation and the initial Tauri installer toolchain dow
 
 ```powershell
 npm install
-npm run tauri dev
+npm run desktop:dev
 ```
 
 The browser preview remains available with `npm run dev`. Native dialogs, local paths, Explorer access, and SQLite history are available in the desktop application. Browser preview reads selected files in memory and uses browser local storage; it never uploads workbook content.
@@ -26,7 +26,7 @@ npm run lint
 npm run test
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 npm run build
-npm run tauri build
+npm run desktop:build
 ```
 
 Tauri builds the frontend automatically. Outputs use version `1.0.0`:
@@ -41,23 +41,25 @@ The generated installers are unsigned unless the organization supplies its own s
 
 Tauri resolves the application data directory for identifier `jp.shepherd.master-sql-generator`; on Windows this is normally `%APPDATA%\jp.shepherd.master-sql-generator`.
 
-| Path                  | Contents                                                                                                                    |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `settings.json`       | Schema/department/master/output paths, SQL options, theme, configurable quantity, imported KBN snapshot and source metadata |
-| `history.sqlite3`     | Conversion history, validation results, source paths, and output paths                                                      |
-| `logs/shepherd.jsonl` | Timestamped actions and technical diagnostics                                                                               |
+| Path                  | Contents                                                                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `settings.json`       | Schema/department/KBN source paths, master/output directories, SQL options, theme, confirmed quantity, KBN metadata and cached rows that are cleared/reloaded at startup |
+| `history.sqlite3`     | Conversion history, validation results, source paths, and output paths                                                                                                   |
+| `logs/shepherd.jsonl` | Timestamped actions and technical diagnostics                                                                                                                            |
 
 SQLite uses WAL journaling and a five-second busy timeout. `history.sqlite3-wal` and `history.sqlite3-shm` may exist while the application is running. Close the application before backing up its whole data directory; do not copy only the SQLite main file while it is open.
 
 Logs rotate after 1 MiB, keeping five older files. Log entries are not intended to contain workbook rows, SQL text, or credentials. Open the log directory through **設定 → ログフォルダを開く**.
 
-The department workbook remains a separate local source. Desktop startup reloads it from its saved path, along with the schema workbook. Missing or unreadable sources require reselection. Department rows are not persisted as manual settings. The KBN definition is a validated local snapshot with source metadata; changing its original file requires reselection through **マスタ変換 → ファイルを変更**. Browser preview cannot reopen arbitrary local paths after a reload and therefore requires the department workbook to be selected again.
+All three reference workbooks remain separate local sources. Desktop startup reloads and validates the schema, department and KBN Excel files from `lastTableDefinitionPath`, `lastDepartmentReferencePath` and `lastKbnDefinitionPath`. Missing, unreadable or invalid sources produce a warning and block conversion until corrected/reselected. Department rows are not persisted as manual settings. Stored KBN rows are cleared before loading references and never authorize a conversion by themselves. Legacy JSON references and source-less cached definitions require an `.xlsx` selection.
+
+Browser preview cannot reopen arbitrary local paths after a reload and requires all reference workbooks to be selected again. During an open session, changing an original file requires reselection through **マスタ変換 → ファイルを変更**. The UI disables conversion until reference loading is complete; stale or failed loads cannot restore previous SQL or valid cached references.
 
 Settings no longer accept department code/name, login-to-user JSON, audit IDs or effective dates. The filename resolves the department through its reference file. Audit IDs and dates are computed automatically for each conversion; only a confirmed product-structure quantity remains configurable when the schema supplies no default. Obsolete saved manual overrides are ignored.
 
 ## Native file access and output safety
 
-All Tauri API imports are guarded by the desktop runtime check in `src/services/platform`. Native file dialogs supply the four local inputs (schema `.xlsx`, department `.xlsx`, KBN `.json`, master `.xlsm`/`.xlsx`) and the output directory. Source files are read only; macros are not executed. Selecting or replacing an input invalidates prior conversion/SQL results, including pending operations.
+All Tauri API imports are guarded by the desktop runtime check in `src/services/platform`. Native file dialogs supply the four local inputs (schema `.xlsx`, department `.xlsx`, KBN `.xlsx`, master `.xlsm`/`.xlsx`) and the output directory. Source files are read only; macros are not executed. Selecting or replacing an input invalidates prior conversion/SQL results, including pending operations.
 
 Each export creates a unique subdirectory of the chosen output directory. A successful export contains:
 
@@ -70,6 +72,12 @@ Text output uses UTF-8. Reports can be exported after failed validation, but SQL
 
 The production content security policy permits local resources and Tauri IPC. The development policy additionally permits the localhost Vite connection. File permissions support the native user-selected paths, report creation, final directory rename, and removal of failed staging output. There is no HTTP client or database execution command.
 
+## Desktop viewport layout
+
+The existing window targets 1440×900 with a minimum of 1100×700. The application root, sidebar and main area are constrained to the viewport, with a compact fixed page header. Conversion keeps its step indicator, four compact file cards and actions above a remaining-height result panel. Format, analysis and validation tabs scroll within that panel.
+
+Validation and history tables scroll internally with sticky headers. SQL table navigation and the virtualized code viewer scroll independently. Table definitions use bounded table-list and definition panes. Dashboard, settings, mapping and history detail have one primary inner content scroll area. Long filenames and paths use truncation with full-value tooltips. Colors, navigation and dark mode retain the approved appearance.
+
 ## Application branding
 
-The sidebar and Windows executable/installer use the compact symbol from the supplied Shepherd logo. The original full wordmark stays unchanged in `assets/ShepherdSQL.png`; `src-tauri/app-icon.svg` frames the symbol without distortion, and Tauri generates the platform icon sizes. See [branding asset instructions](../assets/README.md) for regeneration commands.
+The sidebar displays the full horizontal official artwork from `assets/ShepherdSQL.png`. Its SVG viewport (`55 270 1365 520`) removes only surrounding whitespace and embeds the unchanged 1448×1086 PNG; the aspect ratio, symbol, wordmark and subtitle remain intact. A contained white surface keeps it usable in dark mode without color filters. Windows executable/installer/taskbar icons and the browser favicon use existing compact variants derived from the same source. `src-tauri/app-icon.svg` frames the original symbol without distortion, and Tauri generates the platform icon sizes. See [branding asset instructions](../assets/README.md) for regeneration commands.

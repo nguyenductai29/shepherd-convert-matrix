@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { KbnResolver, parseKbnDefinitions } from "./kbn-resolver";
 
@@ -6,17 +5,17 @@ const row = <T>(category: string, name: string, value: T, extra: Record<string, 
   category_kbn_code: category,
   kbn_name: name,
   kbn_value: value,
+  order_no: 0,
+  invalid_flg: false,
   ...extra,
 });
 
-describe("local KBN definition parsing", () => {
-  it("reads the m_kbn_definition JSON array export and drops unrelated metadata", () => {
-    const source: unknown = JSON.parse(
-      JSON.stringify([
-        row("KBN_PRODUCT_MANAGEMENT", "SAP", "0", { invalid_flg: 0, created_by: 1 }),
-        row("KBN_PRODUCT_MANAGEMENT", "Shepherd", "1", { invalid_flg: 0 }),
-      ]),
-    );
+describe("stored KBN definition validation", () => {
+  it("normalizes stored definitions and drops unrelated metadata", () => {
+    const source: unknown = [
+      row("KBN_PRODUCT_MANAGEMENT", "SAP", "0", { invalid_flg: 0, created_by: 1 }),
+      row("KBN_PRODUCT_MANAGEMENT", "Shepherd", "1", { invalid_flg: 0 }),
+    ];
     expect(parseKbnDefinitions(source)).toEqual([
       row("KBN_PRODUCT_MANAGEMENT", "SAP", "0"),
       row("KBN_PRODUCT_MANAGEMENT", "Shepherd", "1"),
@@ -45,13 +44,12 @@ describe("local KBN definition parsing", () => {
     expect(() => parseKbnDefinitions([row("KBN_TEST", "名称", value)])).toThrow(/kbn_value/),
   );
 
-  it("deduplicates identical definitions while retaining category boundaries", () => {
+  it("rejects even identical active rows with the same category and value", () => {
+    expect(() => parseKbnDefinitions([row("KBN_A", "共通", "0"), row("KBN_A", "共通", 0)])).toThrow(
+      /重複.*KBN_A/,
+    );
     expect(
-      parseKbnDefinitions([
-        row("KBN_A", "共通", "0"),
-        row("KBN_A", "共通", 0),
-        row("KBN_B", "共通", "1"),
-      ]),
+      parseKbnDefinitions([row("KBN_A", "共通", "0"), row("KBN_B", "共通", "0")]),
     ).toHaveLength(2);
   });
 
@@ -59,17 +57,19 @@ describe("local KBN definition parsing", () => {
     [row("KBN_TEST", "名称", "0"), row("KBN_TEST", "名称", "1")],
     [row("KBN_TEST", "名称", "0"), row("KBN_TEST", "別名", "0")],
   ])("rejects conflicting forward or reverse definitions", (...rows) => {
-    expect(() => parseKbnDefinitions(rows)).toThrow(/競合.*KBN_TEST/);
+    expect(() => parseKbnDefinitions(rows)).toThrow(/(?:競合|重複).*KBN_TEST/);
   });
 
-  it("excludes inactive definitions without letting them shadow active entries", () => {
+  it("retains inactive metadata without letting inactive duplicates shadow active entries", () => {
     const definitions = parseKbnDefinitions([
       row("KBN_TEST", "有効", "0", { invalid_flg: 0 }),
       row("KBN_TEST", "有効", "1", { invalid_flg: 1 }),
       row("KBN_TEST", "無効", "2", { invalid_flg: "1" }),
       row("KBN_TEST", "無効2", "3", { invalid_flg: true }),
     ]);
-    expect(definitions).toEqual([row("KBN_TEST", "有効", "0")]);
+    expect(definitions).toHaveLength(4);
+    expect(definitions[1]?.invalid_flg).toBe(true);
+    expect(new KbnResolver(definitions).resolve("KBN_TEST", "有効")).toBe("0");
     expect(() => new KbnResolver(definitions).resolve("KBN_TEST", "無効")).toThrow(/無効/);
   });
 
@@ -77,6 +77,18 @@ describe("local KBN definition parsing", () => {
     expect(() =>
       parseKbnDefinitions([row("KBN_TEST", "名称", "1", { invalid_flg: "yes" })]),
     ).toThrow(/invalid_flg/);
+  });
+
+  it("accepts omitted legacy metadata but never defaults an explicit null value", () => {
+    expect(
+      parseKbnDefinitions([{ category_kbn_code: "KBN_TEST", kbn_name: "名称", kbn_value: "1" }]),
+    ).toEqual([row("KBN_TEST", "名称", "1")]);
+    expect(() =>
+      parseKbnDefinitions([row("KBN_TEST", "名称", "1", { invalid_flg: null })]),
+    ).toThrow("invalid_flg");
+    expect(() => parseKbnDefinitions([row("KBN_TEST", "名称", "1", { order_no: null })])).toThrow(
+      "order_no",
+    );
   });
 });
 
@@ -92,6 +104,7 @@ describe("KbnResolver", () => {
     expect(resolver.resolve(" KBN_PRODUCT_MANAGEMENT ", " Shepherd ")).toBe("1");
     expect(resolver.resolve("KBN_PRODUCT_MANAGEMENT", "SAP")).toBe("0");
     expect(resolver.resolveName("KBN_UNIT", "1")).toBe("個");
+    expect(resolver.resolveByValue(" KBN_UNIT ", " 1 ")).toBe("個");
     expect(resolver.resolveName("KBN_PRODUCT_MANAGEMENT", "1")).toBe("Shepherd");
   });
 
@@ -134,20 +147,4 @@ describe("KbnResolver", () => {
       () => new KbnResolver([row("KBN_TEST", "名称", "0"), row("KBN_TEST", "名称", "1")]),
     ).toThrow(/競合/);
   });
-
-  it.skipIf(!process.env["SHEPHERD_KBN_FIXTURE"])(
-    "accepts the private customer KBN export",
-    async () => {
-      const raw = await readFile(process.env["SHEPHERD_KBN_FIXTURE"]!, "utf8");
-      const resolver = new KbnResolver(parseKbnDefinitions(JSON.parse(raw)));
-      expect(resolver.resolve("KBN_PRODUCT_MANAGEMENT", "SAP")).toBe("0");
-      expect(resolver.resolve("KBN_PRODUCT_MANAGEMENT", "Shepherd")).toBe("1");
-      expect(resolver.resolve("KBN_INPUT_TYPE", "選択肢(コンボボックス)(編集可)")).toBe("3");
-      expect(resolver.resolve("KBN_DISPLAY", "部材割当")).toBe("2");
-      expect(resolver.resolve("KBN_PART_TYPE", "主要部品")).toBe("0");
-      expect(resolver.resolve("KBN_UNIT", "個")).toBe("1");
-      expect(() => resolver.resolve("KBN_UNIT", "%")).toThrow(/%/);
-      expect(() => resolver.resolve("KBN_PRINT_PATTERN", "部材割当系")).toThrow(/部材割当系/);
-    },
-  );
 });

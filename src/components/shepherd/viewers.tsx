@@ -108,8 +108,9 @@ export function SQLCodeViewer({
   return (
     <div
       ref={viewport}
+      data-primary-scroll="sql"
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-      className="h-full overflow-auto bg-code py-3 font-mono text-[12.5px] text-code-foreground"
+      className="h-full min-h-0 overflow-auto bg-code py-3 font-mono text-[12.5px] text-code-foreground"
       aria-label="SQL本文"
     >
       {!visible.length && <p className="px-4 text-code-muted">該当する行はありません。</p>}
@@ -158,9 +159,9 @@ export function TableDefinitionViewer({ table }: { table: TableDef }) {
           {table.logical} ・ {table.columns.length} カラム
         </p>
       </div>
-      <div className="overflow-hidden rounded-md border">
+      <div className="rounded-md border">
         <table className="w-full text-xs">
-          <thead className="bg-muted/60 text-left text-muted-foreground">
+          <thead className="sticky top-0 z-10 bg-muted text-left text-muted-foreground">
             <tr>
               {[
                 "カラム名",
@@ -331,7 +332,7 @@ export function ConversionHistoryTable({
   const btn = "rounded px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-accent";
   return (
     <table className="w-full text-xs">
-      <thead className="bg-muted/60 text-left text-muted-foreground">
+      <thead className="sticky top-0 z-10 bg-muted text-left text-muted-foreground">
         <tr>
           <th className="px-4 py-2 font-medium">実行日時</th>
           <th className="px-4 py-2 font-medium">マスタファイル</th>
@@ -349,7 +350,9 @@ export function ConversionHistoryTable({
             <td className="px-4 py-2.5 font-mono tabular-nums">
               {new Date(r.executedAt).toLocaleString("ja-JP")}
             </td>
-            <td className="max-w-[340px] truncate px-4 py-2.5 font-mono">{r.file}</td>
+            <td className="max-w-[260px] truncate px-4 py-2.5 font-mono" title={r.file}>
+              {r.file}
+            </td>
             {!compact && (
               <td className="px-4 py-2.5 text-right font-mono tabular-nums">{r.tables}</td>
             )}

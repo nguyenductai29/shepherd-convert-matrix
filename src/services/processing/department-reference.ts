@@ -24,14 +24,14 @@ export function extractDepartmentCode(name: string): string {
     Array.from(code).length > 255
   ) {
     throw new Error(
-      "マスタファイル名から部門コードを取得できませんでした。<部門コード>_Shepherd導入_マスタ整備ファイル.xlsm または .xlsx の形式で指定してください。テンプレートの「部門コード」は実際のコードに置き換えてください。",
+      "ファイル名がShepherdマスタの命名規則と一致しません。\n期待形式: <部門コード>_Shepherd導入_マスタ整備ファイル.xlsm（.xlsx も対応）。テンプレートの「部門コード」は実際のコードに置き換えてください。",
     );
   }
   return code;
 }
 
 export function resolveDepartment(code: string, rows: readonly DepartmentRow[]): DepartmentRow {
-  const matches = rows.filter((row) => row.departmentCode === code);
+  const matches = rows.filter((row) => row.departmentCode === code && row.invalidFlg === false);
   if (matches.length === 0) {
     throw new Error(`部門コードに対応する部署が見つかりません。部門コード: ${code}`);
   }
@@ -39,11 +39,6 @@ export function resolveDepartment(code: string, rows: readonly DepartmentRow[]):
     throw new Error(`同一の部門コードが部門マスタに複数存在します。部門コード: ${code}`);
   }
   const department = matches[0]!;
-  if (department.invalidFlg !== false) {
-    throw new Error(
-      `部門マスタの部署が無効です。部門コード: ${code}。有効な部門を確認してください。`,
-    );
-  }
   if (
     !Number.isInteger(department.departmentId) ||
     department.departmentId <= 0 ||

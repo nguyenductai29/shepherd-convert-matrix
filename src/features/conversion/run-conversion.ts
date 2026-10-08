@@ -99,6 +99,9 @@ export async function runAnalysis(state: ConversionState, patch: Patch, settings
     };
     let context: SerializableConversionContext;
     try {
+      const referenceError =
+        state.departmentReferenceError || state.kbnDefinitionError || settings.kbnSourceError;
+      if (referenceError) throw new Error(referenceError);
       if (!state.departmentReferenceFile || !state.departmentReference)
         throw new Error("部門マスタを選択してください。");
       const resolved = buildConversionContext(

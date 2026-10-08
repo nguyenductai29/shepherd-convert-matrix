@@ -7,7 +7,7 @@ import { parseTableDefinition } from "./table-definition";
 import { parseMaster, validateMasterFormat } from "./master-parser";
 import { validateMaster } from "./validation";
 import { generateSql } from "./sql-generator";
-import { parseKbnDefinitions } from "./kbn-resolver";
+import { parseKbnReferenceWorkbook } from "./kbn-reference";
 import { localDate } from "./conversion-defaults";
 import { masterFixtureOptions } from "@/test/fixtures/master-workbook";
 import { parseDepartmentReferenceWorkbook, resolveDepartment } from "./department-reference";
@@ -76,8 +76,10 @@ describe.skipIf(!schemaPath || !masterPath)("private local workbook acceptance",
         );
       };
       const tables = parseTableDefinition(await loadWorkbook(schemaPath!));
-      const definitions = parseKbnDefinitions(
-        JSON.parse(await readFile(process.env["SHEPHERD_KBN_FIXTURE"]!, "utf8")),
+      const kbnPath = process.env["SHEPHERD_KBN_FIXTURE"]!;
+      const kbnBytes = await readFile(kbnPath);
+      const definitions = parseKbnReferenceWorkbook(
+        await readWorkbook(new Uint8Array(kbnBytes).buffer),
       );
       const departmentPath = process.env["SHEPHERD_DEPARTMENT_FIXTURE"];
       const departmentBytes = departmentPath ? await readFile(departmentPath) : null;
@@ -154,6 +156,7 @@ describe.skipIf(!schemaPath || !masterPath)("private local workbook acceptance",
       ).toEqual([]);
       if (departmentPath && departmentBytes)
         expect((await readFile(departmentPath)).equals(departmentBytes)).toBe(true);
+      expect((await readFile(kbnPath)).equals(kbnBytes)).toBe(true);
     },
     30000,
   );

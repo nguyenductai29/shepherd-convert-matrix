@@ -149,10 +149,10 @@ describe("native file drops", () => {
       onError: vi.fn(),
     });
     await native.listener!({
-      payload: { type: "drop", paths: ["C:\\区分.json"], position: { x: 0, y: 0 } },
+      payload: { type: "drop", paths: ["C:\\区分.xlsx"], position: { x: 0, y: 0 } },
     });
     expect(onFile).toHaveBeenLastCalledWith(
-      expect.objectContaining({ kind: "kbnDefinition", name: "区分.json" }),
+      expect.objectContaining({ kind: "kbnDefinition", name: "区分.xlsx" }),
     );
     expect(native.settings.get("kbnSource")).toBeNull();
     expect(native.settings.get("lastMasterDirectory")).toBeNull();

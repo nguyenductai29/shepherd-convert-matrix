@@ -1,11 +1,12 @@
 // Desktop settings are stored in the application data directory. The browser preview stays local.
-import { isDesktop } from "./runtime";
+import { extensionOf, isDesktop } from "./runtime";
 import type { ConversionOptions } from "@/config/shepherd-master";
 import { parseKbnDefinitions } from "@/services/processing/kbn-resolver";
 
 export interface LocalSettings extends Omit<ConversionOptions, "departmentReferences"> {
   lastTableDefinitionPath: string | null;
   lastDepartmentReferencePath: string | null;
+  lastKbnDefinitionPath: string | null;
   lastMasterDirectory: string | null;
   lastOutputDirectory: string | null;
   sqlTransaction: boolean;
@@ -26,6 +27,7 @@ export interface LocalSettings extends Omit<ConversionOptions, "departmentRefere
 export const defaultSettings: LocalSettings = {
   lastTableDefinitionPath: null,
   lastDepartmentReferencePath: null,
+  lastKbnDefinitionPath: null,
   lastMasterDirectory: null,
   lastOutputDirectory: null,
   sqlTransaction: true,
@@ -60,6 +62,7 @@ function normalizeSettings(value: unknown): LocalSettings {
   for (const key of [
     "lastTableDefinitionPath",
     "lastDepartmentReferencePath",
+    "lastKbnDefinitionPath",
     "lastMasterDirectory",
     "lastOutputDirectory",
   ] as const) {
@@ -94,15 +97,32 @@ function normalizeSettings(value: unknown): LocalSettings {
         ...(typeof item["modifiedAt"] === "string" ? { modifiedAt: item["modifiedAt"] } : {}),
       };
   }
+  if (
+    (out.kbnSource &&
+      (extensionOf(out.kbnSource.name) !== ".xlsx" ||
+        (out.kbnSource.path && extensionOf(out.kbnSource.path) !== ".xlsx"))) ||
+    (out.lastKbnDefinitionPath && extensionOf(out.lastKbnDefinitionPath) !== ".xlsx")
+  ) {
+    out.kbnSource = null;
+    out.lastKbnDefinitionPath = null;
+    out.kbnSourceError =
+      "以前の区分名称マスタは使用できません。Excelファイル（.xlsx）を再選択してください。";
+    return out;
+  }
+  out.lastKbnDefinitionPath ??= out.kbnSource?.path ?? null;
   if (settings["kbnDefinitions"] !== undefined) {
     try {
       out.kbnDefinitions = parseKbnDefinitions(settings["kbnDefinitions"]);
-      if (out.kbnSource && out.kbnDefinitions.length === 0) throw new Error("Empty KBN snapshot");
+      if (!out.kbnSource && out.kbnDefinitions.length > 0) {
+        out.kbnDefinitions = [];
+        out.kbnSourceError =
+          "保存済みの区分名称マスタの参照元を確認できません。Excelファイル（.xlsx）を再選択してください。";
+      }
     } catch {
       // A broken stored snapshot must never restore obsolete manual KBN overrides.
       out.kbnDefinitions = [];
       out.kbnSourceError =
-        "保存済みのKBN定義データを読み込めませんでした。KBN定義を再読込または再選択してください。";
+        "保存済みの区分名称マスタを読み込めませんでした。Excelファイル（.xlsx）を再読込または再選択してください。";
     }
   }
   return out;

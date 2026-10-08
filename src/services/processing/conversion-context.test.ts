@@ -13,7 +13,13 @@ const departments: DepartmentRow[] = [
   },
 ];
 const kbn: KbnDefinition[] = [
-  { category_kbn_code: "KBN_PRODUCT_MANAGEMENT", kbn_name: "Shepherd", kbn_value: "1" },
+  {
+    category_kbn_code: "KBN_PRODUCT_MANAGEMENT",
+    kbn_name: "Shepherd",
+    kbn_value: "1",
+    order_no: 0,
+    invalid_flg: false,
+  },
 ];
 const name = "HPK_Shepherd導入_マスタ整備ファイル.xlsm";
 
@@ -35,7 +41,7 @@ describe("conversion reference context", () => {
 
   it("blocks before parsing if the filename, department or KBN definition is unresolved", () => {
     expect(() => buildConversionContext("invalid.xlsm", departments, kbn)).toThrow(
-      "マスタファイル名",
+      "ファイル名がShepherdマスタの命名規則と一致しません。",
     );
     expect(() => buildConversionContext(name, [], kbn)).toThrow("部門コードに対応");
     expect(() => buildConversionContext(name, departments, [])).toThrow("KBN_PRODUCT_MANAGEMENT");
