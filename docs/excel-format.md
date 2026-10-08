@@ -32,7 +32,9 @@ Current exports explicitly include `auto_increment` in the column datatype. Some
 
 Required sheets and fixed header text are checked before records are extracted. Header comparison normalizes whitespace and full-width character variants; explanatory lines following a fixed title are permitted. Data outside the fixed column ranges is rejected. Additional sheets are reported as warnings and do not participate in conversion.
 
-The process columns must agree positionally across the item, group, and product matrices. The supplied sample contains a mismatch at `2_3_4_8_工程項目マトリクス!U2`, `5_9_工程Gマトリクス!Q3`, and `1_6_品目構成マトリクス!Y1`: the group header has a numeric suffix that the other two headers do not. This is correctly rejected. It must be corrected in Excel rather than silently renamed or deduplicated by the converter. Making the headers agree is only the format check; duplicate names and all other record problems still block SQL afterward.
+The item and product process names must agree exactly at each corresponding column position. Group headers use the same name for its first occurrence and append `2`, `3`, etc. for subsequent occurrences of that exact logical name, counted left-to-right across the process columns. Unique names require exact equality. Blank columns do not count. Trailing numbers are never stripped: repeated `工程2` names require group headers `工程2`, `工程22`, `工程23`. Missing, reordered, or arbitrary discriminators are errors.
+
+The supplied sample is valid at process columns 13 and 15: item `S2`/`U2` and product `W1`/`Y1` contain `陰極真空処理`, while group `O3`/`Q3` contain `陰極真空処理` and `陰極真空処理2`. Process references and group/product order comparisons use column positions so repeated logical names remain distinct. Database PK/UNIQUE constraints and all other record validations still apply without exception.
 
 ## Extraction rules
 
@@ -47,19 +49,23 @@ The process columns must agree positionally across the item, group, and product 
 
 ## Required local conversion settings
 
-The finalized file does **not** contain the department code/name, audit user ID, effective-from date, product-management classification, or BOM quantity. Set and confirm these in the existing settings screen before conversion:
+The finalized file does **not** supply all common conversion values. The existing settings screen requires:
 
-- Department code and department name.
-- Existing audit user ID used for `created_by` / `updated_by`.
-- Effective-from date.
-- Product management: `0` for SAP or `1` for Shepherd.
-- Confirmed default quantity for product structures. The workbook has no quantity column, so the application does not silently assume 1.
+- Customer-confirmed department code and department name; neither has an invented default.
+- A confirmed configurable quantity when product structures need it and the schema supplies no applicable default. No quantity is silently assumed.
+- A locally imported `m_kbn_definition` JSON export.
 
-The reference dictionaries are local business reference data, not an editable Excel mapping engine:
+Confirmed automatic values are applied to the columns that actually exist in each target table: `created_by = 1`, `updated_by = 1`, `effective_from = current local date`, and `effective_to = 9999-12-31`. The date is evaluated once per conversion, including after the app stays open overnight, and never loaded from a saved effective date. Old manual overrides are ignored. Missing departments or global KBN definitions stop before record validation, preventing cascading missing-value errors.
+
+`KbnResolver` resolves `(category_kbn_code, kbn_name)` to `kbn_value` and supports reverse lookup. The JSON source is an array of these fields, with optional `invalid_flg`; invalid/inactive rows cannot supply values. Conflicting definitions are rejected. The loaded snapshot and source metadata persist locally. Changes to the file require explicit reload/reselection; no database connection or automatic remote refresh occurs.
+
+All applicable parser values use the resolver: `KBN_PRODUCT_MANAGEMENT / Shepherd`, `KBN_PROCESS`, `KBN_INPUT_TYPE`, `KBN_DISPLAY`, `KBN_UNIT`, `KBN_PART_TYPE`, `KBN_PREV_PROC_CHECK`, `KBN_FINAL_PROC_CHECK`, `KBN_ROLE`, and `KBN_PRINT_PATTERN`. Workbook-specific label aliases are centralized in the fixed format configuration and used only when the source has no exact label; no production numeric KBN fallback dictionaries remain. Option-input behavior uses canonical names, so changed codes do not bypass required option references.
+
+The supplied source resolves SAP to `0` and Shepherd to `1`, but these values are data, not business-logic literals. It has no `KBN_UNIT / %` or `KBN_PRINT_PATTERN / 部材割当系`; these remain errors with source locations until an explicit matching definition is provided. The converter does not choose between assembly print-pattern variants.
+
+The remaining user reference dictionary is local business data:
 
 - `userIdByLogin`: existing database user IDs keyed by workbook login ID. User accounts, passwords and companies are not created from this workbook.
-- `unitCodeByName`: confirmed database unit codes keyed by unit label. Known legacy codes are supplied centrally, but missing labels are errors. Unit row numbers are never used as database codes.
-- `reportPatternIdByName`: confirmed report-pattern IDs keyed by workbook label. Known unambiguous patterns are supplied centrally; an assembly-related label with multiple database variants requires an explicit selection.
 
 No database connection is made to resolve these values. Their existence in the target database must be confirmed by the operator. Missing values block generation.
 
@@ -80,7 +86,8 @@ Optional local acceptance tests read private workbooks from environment variable
 ```powershell
 $env:SHEPHERD_SCHEMA_FIXTURE = 'C:\local\table-definition.xlsx'
 $env:SHEPHERD_MASTER_FIXTURE = 'C:\local\customer-master.xlsm'
-npm run test -- src/services/processing/fixtures.local.test.ts src/services/processing/full-mapping.local.test.ts
+$env:SHEPHERD_KBN_FIXTURE = 'C:\local\m_kbn_definition.json'
+npm run test
 ```
 
 These tests verify that source files remain byte-identical, invalid customer data cannot produce SQL, and a complete synthetic master can generate SQL against the real supplied schema.

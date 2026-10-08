@@ -51,6 +51,12 @@ async function processInWorker<T>(
 }
 
 export const processingServices: ProcessingServices = {
+  kbnDefinition: {
+    async load(file) {
+      if (file.kind !== "kbnDefinition") throw new Error("KBN定義データを選択してください。");
+      return processInWorker("kbn-definition", { file }, await bytes(file));
+    },
+  },
   tableDefinition: {
     async load(file) {
       return processInWorker("definition", { file }, await bytes(file));

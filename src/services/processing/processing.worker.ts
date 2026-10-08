@@ -3,6 +3,7 @@ import { parseTableDefinition } from "./table-definition";
 import { validateMasterFormat, parseMaster } from "./master-parser";
 import { validateMaster } from "./validation";
 import { generateSql } from "./sql-generator";
+import { parseKbnDefinitions } from "./kbn-resolver";
 import type {
   MasterParseResult,
   SelectedFile,
@@ -26,6 +27,23 @@ self.onmessage = async (event: MessageEvent<Request>) => {
   try {
     let result: unknown;
     switch (operation) {
+      case "kbn-definition": {
+        let source: unknown;
+        try {
+          const json = new TextDecoder("utf-8", { fatal: true })
+            .decode(buffer)
+            .replace(/^\uFEFF/, "");
+          source = JSON.parse(json);
+        } catch {
+          throw new Error(
+            "KBN定義データを読み込めませんでした。UTF-8のJSONファイルを確認してください。",
+          );
+        }
+        const definitions = parseKbnDefinitions(source);
+        if (definitions.length === 0) throw new Error("KBN定義に有効な区分データがありません。");
+        result = definitions;
+        break;
+      }
       case "definition":
         result = { file: payload.file, tables: parseTableDefinition(await readWorkbook(buffer!)) };
         break;

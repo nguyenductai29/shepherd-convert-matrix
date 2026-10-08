@@ -13,6 +13,7 @@ import { parseTableDefinition } from "./table-definition";
 import { readWorkbook } from "./workbook";
 import { validateMaster } from "./validation";
 import { generateSql } from "./sql-generator";
+import { kbnFixture } from "@/test/fixtures/kbn-definitions";
 
 function completeMasterFixture(): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
@@ -111,9 +112,7 @@ describe.skipIf(!schemaPath)("complete mapping against private schema", () => {
       ...EMPTY_CONVERSION_OPTIONS,
       departmentCode: "35",
       departmentName: "試験部門",
-      auditUserId: "1",
-      effectiveFrom: "2026-10-08",
-      productManagementKbn: "0",
+      kbnDefinitions: kbnFixture,
       defaultQuantity: "1",
       userIdByLogin: { worker: "17" },
     });

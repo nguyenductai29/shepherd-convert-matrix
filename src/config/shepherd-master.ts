@@ -1,4 +1,5 @@
 import type { SheetMapping } from "@/models";
+import type { KbnDefinition } from "@/models/kbn";
 
 /** Values the finalized workbook intentionally does not contain. They must be
  * confirmed in local settings; reference dictionaries are database reference
@@ -6,25 +7,17 @@ import type { SheetMapping } from "@/models";
 export interface ConversionOptions {
   departmentCode: string;
   departmentName: string;
-  auditUserId: string;
-  effectiveFrom: string;
-  productManagementKbn: string;
   defaultQuantity: string;
   userIdByLogin: Record<string, string>;
-  unitCodeByName: Record<string, string>;
-  reportPatternIdByName: Record<string, string>;
+  kbnDefinitions: KbnDefinition[];
 }
 
 export const EMPTY_CONVERSION_OPTIONS: ConversionOptions = {
   departmentCode: "",
   departmentName: "",
-  auditUserId: "",
-  effectiveFrom: "",
-  productManagementKbn: "",
   defaultQuantity: "",
   userIdByLogin: {},
-  unitCodeByName: {},
-  reportPatternIdByName: {},
+  kbnDefinitions: [],
 };
 
 export const shepherdMasterDefinition = {
@@ -125,29 +118,27 @@ export const shepherdMasterDefinition = {
       },
     },
   },
-  inputTypes: {
-    "直接入力(文字列)": 0,
-    "直接入力(数値)": 1,
-    カレンダー入力: 2,
-    "選択肢(コンボボックス 編集可)": 3,
-    "選択肢(コンボボックス 編集不可)": 4,
-    "選択肢(コンボボックス)(編集可)": 3,
-    "選択肢(コンボボックス)(編集不可)": 4,
-    "選択肢(ラジオボタン)": 5,
-    "選択肢(チェックボックス)": 6,
-    "人員マスタ(編集可)": 7,
-    "人員マスタ(編集不可)": 8,
-  } as Record<string, number>,
-  displayTypes: {
-    個別入力: "0",
-    "1つずつ": "0",
-    まとめて: "1",
-    複数入力: "1",
-    組立: "2",
-    部材割当: "2",
-    シリアル組立: "3",
-    シリアル部材割当: "3",
-  } as Record<string, string>,
+  // Fixed workbook label aliases only. Actual codes always come from the local source.
+  kbnAliases: {
+    KBN_INPUT_TYPE: {
+      "選択肢(コンボボックス 編集可)": "選択肢(コンボボックス)(編集可)",
+      "選択肢(コンボボックス 編集不可)": "選択肢(コンボボックス)(編集不可)",
+    },
+    KBN_DISPLAY: {
+      "1つずつ": "個別入力",
+      まとめて: "複数入力",
+      組立: "部材割当",
+      シリアル組立: "シリアル部材割当",
+    },
+    KBN_PREV_PROC_CHECK: { ERROR: "エラー", WARNING: "警告" },
+    KBN_FINAL_PROC_CHECK: { ERROR: "エラー", WARNING: "警告" },
+  } as Record<string, Record<string, string>>,
+  optionInputNames: [
+    "選択肢(コンボボックス)(編集可)",
+    "選択肢(コンボボックス)(編集不可)",
+    "選択肢(ラジオボタン)",
+    "選択肢(チェックボックス)",
+  ] as readonly string[],
   marks: {
     "○": [true, false],
     〇: [true, false],
@@ -156,37 +147,9 @@ export const shepherdMasterDefinition = {
     "●": [false, false],
     "■": [false, true],
   } as Record<string, readonly [boolean, boolean]>,
-  roles: { システム管理者: "0", 管理者: "1", "作業者(HPK)": "2", "作業者(子会社)": "3" } as Record<
-    string,
-    string
-  >,
-  checks: { エラー: "ERROR", 警告: "WARNING", ERROR: "ERROR", WARNING: "WARNING" } as Record<
-    string,
-    string
-  >,
-  // Confirmed m_kbn_definition codes, not row numbers from 単位マトリクス.
-  unitCodes: {
-    個: "1",
-    kV: "2",
-    "A/W": "3",
-    lm: "4",
-    sccm: "5",
-    kg: "6",
-    g: "7",
-    mm: "8",
-    μm: "9",
-    "℃": "10",
-    Pa: "11",
-    "Pa・m³/s": "12",
-    nA: "13",
-  } as Record<string, string>,
-  reportPatternIds: { 実績系: "IF0016", Lot統合系: "IF0018", 分解系: "IF0019" } as Record<
-    string,
-    string
-  >,
   reportAttributes: ["部門外管理品", "帳票無し", "加工品_帳票有り", "調達部材_帳票有り"],
   // The fixed workbook's VBA marks previous-process errors red and warnings yellow.
-  checkColors: { FF0000: "ERROR", FFFF00: "WARNING" } as Record<string, string>,
+  checkColors: { FF0000: "エラー", FFFF00: "警告" } as Record<string, string>,
 } as const;
 
 export const SHEPHERD_TABLE_ORDER = [

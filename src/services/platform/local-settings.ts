@@ -1,7 +1,9 @@
 // Desktop settings are stored in the application data directory. The browser preview stays local.
 import { isDesktop } from "./runtime";
+import type { ConversionOptions } from "@/config/shepherd-master";
+import { parseKbnDefinitions } from "@/services/processing/kbn-resolver";
 
-export interface LocalSettings {
+export interface LocalSettings extends ConversionOptions {
   lastTableDefinitionPath: string | null;
   lastMasterDirectory: string | null;
   lastOutputDirectory: string | null;
@@ -9,15 +11,9 @@ export interface LocalSettings {
   sqlComments: boolean;
   outputEncoding: "utf-8";
   theme: "light" | "dark" | "system";
-  departmentCode: string;
-  departmentName: string;
-  auditUserId: string;
-  effectiveFrom: string;
-  productManagementKbn: string;
-  defaultQuantity: string;
-  userIdByLogin: Record<string, string>;
-  unitCodeByName: Record<string, string>;
-  reportPatternIdByName: Record<string, string>;
+  kbnSource: { name: string; path: string | null; loadedAt: string } | null;
+  /** Retained across unrelated saves until the source is successfully reloaded or reset. */
+  kbnSourceError: string | null;
 }
 
 export const defaultSettings: LocalSettings = {
@@ -30,13 +26,11 @@ export const defaultSettings: LocalSettings = {
   theme: "light",
   departmentCode: "",
   departmentName: "",
-  auditUserId: "",
-  effectiveFrom: "",
-  productManagementKbn: "",
   defaultQuantity: "",
   userIdByLogin: {},
-  unitCodeByName: {},
-  reportPatternIdByName: {},
+  kbnDefinitions: [],
+  kbnSource: null,
+  kbnSourceError: null,
 };
 
 const LS_KEY = "shepherd-local-settings";
@@ -71,22 +65,40 @@ function normalizeSettings(value: unknown): LocalSettings {
   }
   const theme = settings["theme"];
   if (theme === "light" || theme === "dark" || theme === "system") out.theme = theme;
-  for (const key of [
-    "departmentCode",
-    "departmentName",
-    "auditUserId",
-    "effectiveFrom",
-    "productManagementKbn",
-    "defaultQuantity",
-  ] as const) {
+  for (const key of ["departmentCode", "departmentName", "defaultQuantity"] as const) {
     if (typeof settings[key] === "string") out[key] = settings[key];
   }
-  for (const key of ["userIdByLogin", "unitCodeByName", "reportPatternIdByName"] as const) {
+  for (const key of ["userIdByLogin"] as const) {
     const mapping = settings[key];
     if (mapping && typeof mapping === "object" && !Array.isArray(mapping)) {
       out[key] = Object.fromEntries(
         Object.entries(mapping).filter(([, value]) => typeof value === "string"),
       );
+    }
+  }
+  if (typeof settings["kbnSourceError"] === "string")
+    out.kbnSourceError = settings["kbnSourceError"];
+  const source = settings["kbnSource"];
+  if (source && typeof source === "object") {
+    const item = source as Record<string, unknown>;
+    if (
+      typeof item["name"] === "string" &&
+      item["name"] &&
+      (typeof item["path"] === "string" || item["path"] === null) &&
+      typeof item["loadedAt"] === "string" &&
+      Number.isFinite(Date.parse(item["loadedAt"]))
+    )
+      out.kbnSource = { name: item["name"], path: item["path"], loadedAt: item["loadedAt"] };
+  }
+  if (settings["kbnDefinitions"] !== undefined) {
+    try {
+      out.kbnDefinitions = parseKbnDefinitions(settings["kbnDefinitions"]);
+      if (out.kbnSource && out.kbnDefinitions.length === 0) throw new Error("Empty KBN snapshot");
+    } catch {
+      // A broken stored snapshot must never restore obsolete manual KBN overrides.
+      out.kbnDefinitions = [];
+      out.kbnSourceError =
+        "保存済みのKBN定義データを読み込めませんでした。KBN定義を再読込または再選択してください。";
     }
   }
   return out;

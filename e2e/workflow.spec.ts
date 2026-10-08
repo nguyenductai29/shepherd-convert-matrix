@@ -93,8 +93,19 @@ test("empty screens, persistent settings and real worker conversion/save", async
   await expect(page.getByRole("textbox").nth(0)).toHaveValue("35");
   await page.evaluate(
     (settings) => localStorage.setItem("shepherd-local-settings", JSON.stringify(settings)),
-    { ...defaultSettings, ...fixtureOptions },
+    { ...defaultSettings, ...fixtureOptions, kbnDefinitions: [] },
   );
+  await page.reload();
+  await page.getByLabel("KBN定義ファイル").setInputFiles({
+    name: "m_kbn_definition.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(fixtureOptions.kbnDefinitions)),
+  });
+  await expect(page.getByText(/KBN定義を読み込みました/)).toBeVisible();
+  await expect(page.locator('input[value="Shepherd → 1"]')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('input[value="Shepherd → 1"]')).toBeVisible();
+  await expect(page.getByRole("textbox").nth(0)).toHaveValue("35");
   await page.goto("/convert");
   const files = await workbooks();
   await page.locator('input[type="file"]').nth(0).setInputFiles({

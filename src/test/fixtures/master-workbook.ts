@@ -1,14 +1,13 @@
 import ExcelJS from "exceljs";
 import { EMPTY_CONVERSION_OPTIONS, shepherdMasterDefinition } from "@/config/shepherd-master";
+import { kbnFixture } from "./kbn-definitions";
 
 export const masterFixtureOptions = {
   ...EMPTY_CONVERSION_OPTIONS,
   departmentCode: "35",
   departmentName: "35部門",
-  auditUserId: "1",
-  effectiveFrom: "2026-10-08",
-  productManagementKbn: "0",
   defaultQuantity: "1",
+  kbnDefinitions: kbnFixture,
 };
 export function masterFixture() {
   const wb = new ExcelJS.Workbook();

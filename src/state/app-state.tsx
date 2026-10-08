@@ -10,6 +10,7 @@ import {
 } from "react";
 import type {
   ConversionStatus,
+  ConversionFileKind,
   FormatCheckResult,
   MasterParseResult,
   SelectedFile,
@@ -61,7 +62,7 @@ export const initialConversion: ConversionState = {
 interface AppState {
   conversion: ConversionState;
   patchConversion: (patch: Partial<ConversionState>) => void;
-  setFile: (file: SelectedFile | null, kind: SelectedFile["kind"]) => void;
+  setFile: (file: SelectedFile | null, kind: ConversionFileKind) => void;
   resetResults: () => void;
   settings: LocalSettings;
   setSettings: (settings: LocalSettings) => void;
@@ -118,6 +119,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         if (!active) return;
         settingsRef.current = saved;
         setSettingsRaw(saved);
+        if (saved.kbnSourceError) setStartupError(saved.kbnSourceError);
         if (saved.lastTableDefinitionPath) {
           const file = await fileFromPath("tableDefinition", saved.lastTableDefinitionPath);
           if (!active) return;
@@ -146,7 +148,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .then((definition) => {
         if (!active) return;
         setConversion((c) => ({ ...c, tableDefinition: definition, progressMessage: null }));
-        setStartupError(null);
+        setStartupError(settingsRef.current.kbnSourceError);
       })
       .catch((error) => {
         if (!active) return;
@@ -175,7 +177,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       conversionStatus: c.masterFile && c.tableDefinitionFile ? "file-selected" : "idle",
     }));
   }, []);
-  const setFile = useCallback((file: SelectedFile | null, kind: SelectedFile["kind"]) => {
+  const setFile = useCallback((file: SelectedFile | null, kind: ConversionFileKind) => {
+    if (kind !== "master" && kind !== "tableDefinition") return;
+    if (file && file.kind !== kind) return;
     invalidateConversion();
     setConversion((c) => {
       const next = {
@@ -192,17 +196,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const setSettings = useCallback(
     (next: LocalSettings) => {
       const previous = settingsRef.current;
+      if (previous.kbnSourceError !== next.kbnSourceError) {
+        setStartupError((current) =>
+          current === previous.kbnSourceError ? next.kbnSourceError : current,
+        );
+      }
       {
         const keys = [
           "departmentCode",
           "departmentName",
-          "auditUserId",
-          "effectiveFrom",
-          "productManagementKbn",
           "defaultQuantity",
           "userIdByLogin",
-          "unitCodeByName",
-          "reportPatternIdByName",
+          "kbnDefinitions",
+          "kbnSource",
+          "kbnSourceError",
         ] as const;
         if (keys.some((key) => JSON.stringify(previous[key]) !== JSON.stringify(next[key])))
           resetResults();

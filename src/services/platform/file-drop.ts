@@ -1,4 +1,4 @@
-import type { FileKind, SelectedFile } from "@/models";
+import type { ConversionFileKind, SelectedFile } from "@/models";
 import { FILE_RULES, fileFromPath, isAllowed } from "./files";
 import { updateSettings } from "./local-settings";
 import { dirname, isDesktop } from "./runtime";
@@ -14,7 +14,7 @@ interface NativeDropOptions {
 
 /** Tauri provides absolute paths; browser File objects deliberately do not expose them. */
 export async function subscribeNativeFileDrop(
-  kind: FileKind,
+  kind: ConversionFileKind,
   options: NativeDropOptions,
 ): Promise<() => void> {
   if (!isDesktop()) return () => undefined;

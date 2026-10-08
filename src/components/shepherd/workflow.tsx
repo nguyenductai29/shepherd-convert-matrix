@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/state/app-state";
-import type { FileKind, SelectedFile } from "@/models";
+import type { ConversionFileKind, SelectedFile } from "@/models";
 import { FILE_RULES, fromBrowserFile, isAllowed, pickFileNative } from "@/services/platform/files";
 import { formatBytes, isDesktop } from "@/services/platform/runtime";
 import { loadSettings } from "@/services/platform/local-settings";
@@ -103,7 +103,7 @@ export function SelectedFileInfo({ file, onClear }: { file: SelectedFile; onClea
   );
 }
 
-function useFileSelection(kind: FileKind) {
+function useFileSelection(kind: ConversionFileKind) {
   const { setFile, setSettings, conversion } = useAppState();
   const busy = PROCESSING.includes(conversion.conversionStatus);
   const input = useRef<HTMLInputElement>(null);
@@ -151,7 +151,7 @@ function useFileSelection(kind: FileKind) {
 }
 
 /** Large drop area + native picker. Used for the master file. */
-export function FileDropzone({ kind }: { kind: FileKind }) {
+export function FileDropzone({ kind }: { kind: ConversionFileKind }) {
   const { conversion, setFile } = useAppState();
   const file = kind === "master" ? conversion.masterFile : conversion.tableDefinitionFile;
   const { pick, accept, hiddenInput } = useFileSelection(kind);
@@ -250,7 +250,7 @@ export function FileDropzone({ kind }: { kind: FileKind }) {
 }
 
 /** Compact picker button + file info. Used for the table definition file. */
-export function FilePickerCard({ kind }: { kind: FileKind }) {
+export function FilePickerCard({ kind }: { kind: ConversionFileKind }) {
   const { conversion, setFile } = useAppState();
   const file = kind === "master" ? conversion.masterFile : conversion.tableDefinitionFile;
   const { pick, hiddenInput } = useFileSelection(kind);

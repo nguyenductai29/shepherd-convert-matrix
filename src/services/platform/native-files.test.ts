@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
-import { saveConversionArtifacts, readSelectedFile, fileFromPath } from "./files";
+import { saveConversionArtifacts, readSelectedFile, fileFromPath, pickFileNative } from "./files";
 import type { ValidationResult } from "@/models";
 
 const native = vi.hoisted(() => ({
@@ -148,5 +148,18 @@ describe("native output and file access", () => {
       new Uint8Array([80, 75, 3, 4, 9]),
     );
     expect(await fileFromPath("master", "C:\\不存在.xlsm")).toBeNull();
+  });
+
+  it("selects and rereads native KBN JSON without persisting an unvalidated source", async () => {
+    const path = "C:\\定義\\区分.json";
+    const json = '[{"category_kbn_code":"KBN_UNIT","kbn_name":"個","kbn_value":"8"}]';
+    native.files.set(path, new Uint8Array(new TextEncoder().encode(json)));
+    native.directory = path;
+    const selected = await pickFileNative("kbnDefinition");
+    expect(selected?.path).toBe(path);
+    expect(new TextDecoder().decode(await readSelectedFile(selected!))).toBe(json);
+    expect((await fileFromPath("kbnDefinition", path))?.path).toBe(path);
+    expect(native.settings.get("kbnSource")).toBeUndefined();
+    expect(native.settings.get("lastMasterDirectory")).toBeUndefined();
   });
 });

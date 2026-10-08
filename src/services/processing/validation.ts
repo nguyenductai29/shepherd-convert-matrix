@@ -81,7 +81,8 @@ export function validateMaster(
     items.push(item);
     return item;
   };
-  if (!parsed.data.length) issue("empty-master", "変換対象のレコードがありません。");
+  if (!parsed.data.length && !items.some((item) => item.severity === "error"))
+    issue("empty-master", "変換対象のレコードがありません。");
   if (tables.size !== definition.tables.length)
     issue("schema", "テーブル定義に重複した物理テーブル名があります。");
   const seenIds = new Set<string>();

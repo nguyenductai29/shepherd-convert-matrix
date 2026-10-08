@@ -5,6 +5,7 @@ import { saveHistory, getHistory, type HistoryEntry } from "@/services/platform/
 import { logEvent } from "@/services/platform/logging";
 import { saveConversionArtifacts } from "@/services/platform/files";
 import type { LocalSettings } from "@/services/platform/local-settings";
+import { CONFIRMED_CONVERSION_DEFAULTS } from "@/services/processing/conversion-defaults";
 
 let revision = 0;
 export function invalidateConversion() {
@@ -26,11 +27,7 @@ const diagnostics = (error: unknown) =>
   error instanceof Error ? (error.stack ?? error.message) : String(error);
 const log = (action: string, severity: "info" | "error", detail?: string) =>
   logEvent(action, severity, detail).catch(() => undefined);
-function historyEntry(
-  state: ConversionState,
-  settings: LocalSettings,
-  status: HistoryEntry["status"],
-): HistoryEntry {
+function historyEntry(state: ConversionState, status: HistoryEntry["status"]): HistoryEntry {
   return {
     id: state.historyId ?? crypto.randomUUID(),
     executedAt: new Date().toISOString(),
@@ -42,7 +39,7 @@ function historyEntry(
       state.formatCheckResult?.items.filter((i) => i.status === "error").length ??
       (status === "failed" ? 1 : 0),
     warnings: state.validationResult?.warningCount ?? 0,
-    user: settings.auditUserId || "ローカル",
+    user: String(CONFIRMED_CONVERSION_DEFAULTS.created_by),
     status,
     masterFilepath: state.masterFile?.path ?? null,
     tableDefinitionFilename: state.tableDefinitionFile?.name ?? "",
@@ -103,7 +100,7 @@ export async function runAnalysis(state: ConversionState, patch: Patch, settings
         progressMessage: null,
         errorMessage: "マスタファイルのフォーマットが定義と一致しないため処理を続行できません。",
       });
-      await saveHistory(historyEntry(current, settings, "failed"));
+      await saveHistory(historyEntry(current, "failed"));
       return;
     }
     phase = "マスタデータの解析に失敗しました。";
@@ -123,11 +120,7 @@ export async function runAnalysis(state: ConversionState, patch: Patch, settings
     });
     phase = "変換履歴を保存できませんでした。";
     await saveHistory(
-      historyEntry(
-        current,
-        settings,
-        validationResult.errorCount > 0 ? "validation_error" : "success",
-      ),
+      historyEntry(current, validationResult.errorCount > 0 ? "validation_error" : "success"),
     );
     await log(
       "analysis-completed",
@@ -146,7 +139,7 @@ export async function runAnalysis(state: ConversionState, patch: Patch, settings
     });
     await log("analysis-failed", "error", diagnostics(error));
     try {
-      await saveHistory(historyEntry(current, settings, "failed"));
+      await saveHistory(historyEntry(current, "failed"));
     } catch {
       /* Original failure remains visible. */
     }
@@ -197,7 +190,7 @@ export async function runGeneration(
     await log("sql-generation-failed", "error", diagnostics(error));
     try {
       const previous = state.historyId ? await getHistory(state.historyId) : null;
-      const row = historyEntry(state, settings, "failed");
+      const row = historyEntry(state, "failed");
       await saveHistory({ ...row, executedAt: previous?.executedAt ?? row.executedAt });
     } catch {
       /* The primary generation failure remains visible. */
@@ -236,7 +229,6 @@ export async function saveConversion(
     }
     const row = historyEntry(
       state,
-      settings,
       state.validationResult.errorCount > 0 ? "validation_error" : "success",
     );
     const existing = state.historyId ? await getHistory(state.historyId) : null;

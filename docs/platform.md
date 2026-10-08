@@ -43,7 +43,7 @@ Tauri resolves the application data directory for identifier `jp.shepherd.master
 
 | Path                  | Contents                                                                                           |
 | --------------------- | -------------------------------------------------------------------------------------------------- |
-| `settings.json`       | Recent paths, SQL options, theme, and explicitly configured Shepherd values/reference dictionaries |
+| `settings.json`       | Recent paths, SQL options, theme, department/quantity/user references, imported KBN snapshot and source metadata |
 | `history.sqlite3`     | Conversion history, validation results, source paths, and output paths                             |
 | `logs/shepherd.jsonl` | Timestamped actions and technical diagnostics                                                      |
 

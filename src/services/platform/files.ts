@@ -8,6 +8,7 @@ const browserFiles = new WeakMap<SelectedFile, File>();
 export const FILE_RULES: Record<FileKind, { label: string; extensions: string[] }> = {
   tableDefinition: { label: "テーブル定義書", extensions: ["xlsx"] },
   master: { label: "マスタ整備ファイル", extensions: ["xlsm", "xlsx"] },
+  kbnDefinition: { label: "KBN定義データ", extensions: ["json"] },
 };
 
 export function isAllowed(kind: FileKind, name: string) {
@@ -24,7 +25,11 @@ export async function pickFileNative(kind: FileKind): Promise<SelectedFile | nul
       ? settings.lastTableDefinitionPath
         ? dirname(settings.lastTableDefinitionPath)
         : undefined
-      : (settings.lastMasterDirectory ?? undefined);
+      : kind === "master"
+        ? (settings.lastMasterDirectory ?? undefined)
+        : settings.kbnSource?.path
+          ? dirname(settings.kbnSource.path)
+          : undefined;
 
   const rule = FILE_RULES[kind];
   const path = await open({
@@ -47,11 +52,14 @@ export async function pickFileNative(kind: FileKind): Promise<SelectedFile | nul
     size = null;
   }
 
-  await updateSettings(
-    kind === "tableDefinition"
-      ? { lastTableDefinitionPath: path }
-      : { lastMasterDirectory: dirname(path) },
-  );
+  // KBN source metadata is persisted only after its contents have been validated.
+  if (kind !== "kbnDefinition") {
+    await updateSettings(
+      kind === "tableDefinition"
+        ? { lastTableDefinitionPath: path }
+        : { lastMasterDirectory: dirname(path) },
+    );
+  }
 
   const name = basename(path);
   return { kind, name, path, extension: extensionOf(name), size, modifiedAt };
@@ -71,7 +79,7 @@ export function fromBrowserFile(kind: FileKind, f: File): SelectedFile {
   return selected;
 }
 
-/** Reads workbook bytes locally. The source workbook is never opened for writing. */
+/** Reads source bytes locally. Source files are never opened for writing. */
 export async function readSelectedFile(file: SelectedFile): Promise<ArrayBuffer> {
   if (!isAllowed(file.kind, file.name)) throw new Error("対応していないファイル形式です。");
   if (isDesktop()) {
@@ -86,7 +94,7 @@ export async function readSelectedFile(file: SelectedFile): Promise<ArrayBuffer>
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as ArrayBuffer);
-    reader.onerror = () => reject(new Error("Excelファイルを読み込めませんでした。"));
+    reader.onerror = () => reject(new Error("ファイルを読み込めませんでした。"));
     reader.readAsArrayBuffer(browserFile);
   });
 }

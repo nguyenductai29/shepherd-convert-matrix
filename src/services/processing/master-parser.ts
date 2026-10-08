@@ -17,6 +17,9 @@ import {
   type ConversionOptions,
 } from "@/config/shepherd-master";
 import { cellText, cellValue, normalizedHeader } from "./workbook";
+import { KbnResolver } from "./kbn-resolver";
+import { confirmedDefaults, localDate } from "./conversion-defaults";
+import { hasDefault, isAutoIncrement } from "./value-validation";
 
 type Values = MasterRecord["values"];
 const definitions = config.sheets;
@@ -112,6 +115,7 @@ export function validateMasterFormat(
   const groups = workbook.getWorksheet(definitions.groups.name);
   const products = workbook.getWorksheet(definitions.products.name);
   if (processes && groups && products) {
+    const occurrences = new Map<string, number>();
     for (
       let offset = 0;
       offset <= definitions.items.processEndColumn - definitions.items.processStartColumn;
@@ -124,6 +128,11 @@ export function validateMasterFormat(
             definitions.items.processStartColumn + offset,
           ),
         );
+        // Count exact logical names left-to-right. Only later occurrences get a
+        // discriminator; natural trailing digits remain part of the base name.
+        const occurrence = expected ? (occurrences.get(expected) ?? 0) + 1 : 0;
+        if (expected) occurrences.set(expected, occurrence);
+        const expectedGroup = occurrence > 1 ? `${expected}${occurrence}` : expected;
         const group = cellText(
           groups.getCell(
             definitions.groups.rows.process,
@@ -133,10 +142,10 @@ export function validateMasterFormat(
         const product = cellText(
           products.getCell(1, definitions.products.processStartColumn + offset),
         );
-        if (expected !== group || expected !== product)
+        if (expectedGroup !== group || expected !== product)
           items.push({
             label: `工程列 ${offset + 1}`,
-            detail: `工程項目・工程G・品目構成の工程名が一致しません (${expected} / ${group} / ${product})。`,
+            detail: `工程項目・品目構成の工程名、または工程Gの重複連番が一致しません (${expected} / ${group} / ${product}、工程G期待値: ${expectedGroup})。`,
             status: "error",
           });
       } catch (error) {
@@ -223,12 +232,38 @@ export function parseMaster(
       return String(value).padStart(format.length, "0");
     return String(value ?? "").trim();
   };
-  const audit: Values = {};
-  if (options.auditUserId.trim()) {
-    audit["created_by"] = options.auditUserId.trim();
-    audit["updated_by"] = options.auditUserId.trim();
+  const configurationError = (column: string, message: string) => {
+    issues.push({
+      severity: "error",
+      category: "configuration",
+      sourceSheet: "変換設定",
+      column,
+      message,
+    });
+  };
+  for (const [key, label] of Object.entries({
+    departmentCode: "部門コード",
+    departmentName: "部門名",
+  })) {
+    if (!String(options[key as keyof ConversionOptions] ?? "").trim())
+      configurationError(key, `${label}は未確定です。確認済みの値を設定してください。`);
   }
-  const effective: Values = options.effectiveFrom ? { effective_from: options.effectiveFrom } : {};
+  let resolver: KbnResolver;
+  let productManagementKbn = "";
+  try {
+    resolver = new KbnResolver(options.kbnDefinitions);
+    productManagementKbn = resolver.resolve("KBN_PRODUCT_MANAGEMENT", "Shepherd");
+  } catch (error) {
+    configurationError("kbnDefinitions", String(error instanceof Error ? error.message : error));
+  }
+  if (
+    options.defaultQuantity &&
+    (!/^\d+(\.\d+)?$/.test(options.defaultQuantity) || Number(options.defaultQuantity) <= 0)
+  )
+    configurationError("defaultQuantity", "構成数量は正の数を指定してください。");
+  if (issues.some((issue) => issue.severity === "error"))
+    return { file, data: [], tables: [], totalRecords: 0, issues };
+  const today = localDate();
   const add = (
     table: string,
     sheet: ExcelJS.Worksheet | string,
@@ -250,58 +285,44 @@ export function parseMaster(
       targetTable: table,
       sourceSheet,
       sourceRow: row,
-      values: { ...audit, ...values },
+      values: {
+        ...values,
+        ...confirmedDefaults(
+          definition.find((t) => t.name === table),
+          today,
+        ),
+      },
       originalValues,
       sourceCells: cells,
     };
     data.push(record);
     return record;
   };
-  const lookup = (dictionary: Record<string, string | number>, value: string) => {
-    const key = Object.keys(dictionary).find(
-      (k) => normalizedHeader(k) === normalizedHeader(value),
-    );
-    return key === undefined ? undefined : dictionary[key];
-  };
+  const canonicalName = (category: string, value: string) =>
+    config.kbnAliases[category]?.[value] ?? value;
   const code = (
-    dictionary: Record<string, string | number>,
+    category: string,
     value: string,
     sheet: string,
     row: number,
     column: string,
-  ): string | number | null => {
-    const result = lookup(dictionary, value);
-    if (result === undefined) {
-      report(sheet, row, column, `区分値を解決できません: ${value || "（空白）"}`, value);
+  ): string | null => {
+    try {
+      const alias = canonicalName(category, value);
+      if (alias !== value) {
+        try {
+          // An explicit source definition takes precedence over a format alias.
+          return resolver.resolve(category, value);
+        } catch {
+          return resolver.resolve(category, alias);
+        }
+      }
+      return resolver.resolve(category, value);
+    } catch (error) {
+      report(sheet, row, column, String(error instanceof Error ? error.message : error), value);
       return null;
     }
-    return result;
   };
-  for (const [key, label] of Object.entries({
-    departmentCode: "部門コード",
-    departmentName: "部門名",
-    auditUserId: "登録・更新者ID",
-    effectiveFrom: "適用開始日",
-    productManagementKbn: "品目管理区分",
-    defaultQuantity: "構成数量",
-  })) {
-    if (!String(options[key as keyof ConversionOptions] ?? "").trim())
-      report("変換設定", 0, key, `${label}を設定してください。Excelにはこの値が含まれていません。`);
-  }
-  if (options.auditUserId && !/^[1-9]\d*$/.test(options.auditUserId))
-    report("変換設定", 0, "auditUserId", "登録・更新者IDは正の整数を指定してください。");
-  if (options.productManagementKbn && !["0", "1"].includes(options.productManagementKbn))
-    report(
-      "変換設定",
-      0,
-      "productManagementKbn",
-      "品目管理区分は 0 (SAP) または 1 (Shepherd) を指定してください。",
-    );
-  if (
-    options.defaultQuantity &&
-    (!/^\d+(\.\d+)?$/.test(options.defaultQuantity) || Number(options.defaultQuantity) <= 0)
-  )
-    report("変換設定", 0, "defaultQuantity", "構成数量は正の数を指定してください。");
   const department = add("m_departments", "変換設定", 0, {
     department_code: options.departmentCode,
     department_name: options.departmentName,
@@ -371,7 +392,6 @@ export function parseMaster(
 
   const itemSheet = workbook.getWorksheet(definitions.items.name)!;
   const processes = new Map<number, MasterRecord>();
-  const processNames = new Map<string, MasterRecord>();
   const locationSheet = workbook.getWorksheet(definitions.locations.name)!;
   const locations = new Set<string>();
   for (let row = definitions.locations.startRow; row <= locationSheet.rowCount; row++) {
@@ -425,12 +445,17 @@ export function parseMaster(
       );
     const values: Values = {
       ...departmental,
-      ...effective,
       process_name: name,
       major_process_id: major ? ref(major, "major_process_id") : null,
-      process_kbn: experimental ? "1" : "0",
+      process_kbn: code(
+        "KBN_PROCESS",
+        experimental ? "実験工程" : "通常工程",
+        itemSheet.name,
+        definitions.items.rows.experimental,
+        "process_kbn",
+      ),
       display_kbn: code(
-        config.displayTypes,
+        "KBN_DISPLAY",
         text(itemSheet, definitions.items.rows.display, col),
         itemSheet.name,
         definitions.items.rows.display,
@@ -443,18 +468,8 @@ export function parseMaster(
       display_kbn: itemSheet.getCell(definitions.items.rows.display, col).address,
     });
     processes.set(col, record);
-    if (processNames.has(name))
-      report(
-        itemSheet.name,
-        definitions.items.rows.process,
-        "process_name",
-        "工程名称が重複しているため参照を一意に解決できません。",
-        name,
-      );
-    else processNames.set(name, record);
   }
   const itemNames = new Map<string, MasterRecord>();
-  const unitCodes = { ...config.unitCodes, ...options.unitCodeByName };
   const unitSheet = workbook.getWorksheet(definitions.units.name)!;
   const units = new Set<string>();
   for (let row = definitions.units.startRow; row <= unitSheet.rowCount; row++) {
@@ -498,8 +513,8 @@ export function parseMaster(
         "選択肢マトリクスに参照先がありません。",
         optionName,
       );
-    const inputType = code(config.inputTypes, input, itemSheet.name, row, "input_type");
-    if (typeof inputType === "number" && inputType >= 3 && inputType <= 6 && !option)
+    const inputType = code("KBN_INPUT_TYPE", input, itemSheet.name, row, "input_type");
+    if (config.optionInputNames.includes(canonicalName("KBN_INPUT_TYPE", input)) && !option)
       report(
         itemSheet.name,
         row,
@@ -519,7 +534,7 @@ export function parseMaster(
         item_name_id: ref(itemName, "item_name_id"),
         input_type: inputType,
         description: text(itemSheet, row, definitions.items.columns.description) || null,
-        unit_kbn: unit ? code(unitCodes, unit, itemSheet.name, row, "unit_kbn") : null,
+        unit_kbn: unit ? code("KBN_UNIT", unit, itemSheet.name, row, "unit_kbn") : null,
         option_id: option ? ref(option, "option_id") : null,
       },
       {
@@ -559,7 +574,6 @@ export function parseMaster(
         row,
         {
           ...departmental,
-          ...effective,
           process_id: ref(process, "process_id"),
           item_id: ref(item, "item_id"),
           required_flg: flags[0],
@@ -576,7 +590,7 @@ export function parseMaster(
 
   const groupSheet = workbook.getWorksheet(definitions.groups.name)!;
   const groups = new Map<string, MasterRecord>();
-  const sequences = new Map<string, Map<string, number>>();
+  const sequences = new Map<string, Map<number, number>>();
   for (let row = definitions.groups.startRow; row <= groupSheet.rowCount; row++) {
     const name = text(groupSheet, row, definitions.groups.nameColumn);
     const orders: Array<{ order: number; col: number; process: MasterRecord }> = [];
@@ -619,7 +633,7 @@ export function parseMaster(
     else groups.set(name, group);
     orders.sort((a, b) => a.order - b.order);
     const seen = new Set<number>();
-    const sequence = new Map<string, number>();
+    const sequence = new Map<number, number>();
     for (let index = 0; index < orders.length; index++) {
       const current = orders[index]!;
       if (seen.has(current.order))
@@ -631,7 +645,8 @@ export function parseMaster(
           current.order,
         );
       seen.add(current.order);
-      sequence.set(String(current.process.values["process_name"]), current.order);
+      // A logical name may repeat; the shared column position identifies the process.
+      sequence.set(current.col - definitions.groups.processStartColumn, current.order);
       const previous = orders[index - 1]?.process;
       const fill = groupSheet.getCell(row, current.col).fill;
       let check: string | null = null;
@@ -639,9 +654,8 @@ export function parseMaster(
         const color = fill.fgColor?.argb?.slice(-6).toUpperCase();
         if (color) check = config.checkColors[color] ?? null;
         else if ((fill.fgColor as { indexed?: number } | undefined)?.indexed === 10)
-          check = "ERROR";
-        else if ((fill.fgColor as { indexed?: number } | undefined)?.indexed === 13)
-          check = "WARNING";
+          check = "エラー";
+        else if ((fill.fgColor as { indexed?: number } | undefined)?.indexed === 13) check = "警告";
         else if (fill.fgColor?.theme !== undefined)
           report(
             groupSheet.name,
@@ -661,7 +675,9 @@ export function parseMaster(
           process_id: ref(current.process, "process_id"),
           prev_process_id: previous ? ref(previous, "process_id") : null,
           order_no: current.order,
-          prev_proc_check_kbn: check,
+          prev_proc_check_kbn: check
+            ? code("KBN_PREV_PROC_CHECK", check, groupSheet.name, row, "prev_proc_check_kbn")
+            : null,
           final_process_flg: index === orders.length - 1,
         },
         {
@@ -821,9 +837,11 @@ export function parseMaster(
           "warning",
         );
     } else {
-      const values: Values = { ...effective, product_code: productCode, product_name: name };
-      if (options.productManagementKbn)
-        values["product_management_kbn"] = options.productManagementKbn;
+      const values: Values = {
+        product_code: productCode,
+        product_name: name,
+        product_management_kbn: productManagementKbn,
+      };
       const product = add("m_products", productSheet, row, values, {
         product_code: `F${row}`,
         product_name: `G${row}`,
@@ -852,7 +870,6 @@ export function parseMaster(
           row,
           {
             ...departmental,
-            ...effective,
             product_code: productCode,
             process_group_id: group ? ref(group, "process_group_id") : null,
           },
@@ -867,7 +884,7 @@ export function parseMaster(
           const processName = text(productSheet, 1, col);
           if (!processName) continue;
           const actual = text(productSheet, row, col);
-          const order = expected?.get(processName);
+          const order = expected?.get(col - definitions.products.processStartColumn);
           if ((actual ? Number(actual) : undefined) !== order)
             report(
               productSheet.name,
@@ -902,13 +919,18 @@ export function parseMaster(
       childOrder.set(parent.code, order);
       const first = products.get(productCode)!;
       const partValue = first.part
-        ? code({ 主要部品: "0" }, first.part, productSheet.name, row, "part_type_kbn")
+        ? code("KBN_PART_TYPE", first.part, productSheet.name, row, "part_type_kbn")
         : null;
       const check = first.finalCheck
-        ? code(config.checks, first.finalCheck, productSheet.name, row, "final_proc_check_kbn")
+        ? code(
+            "KBN_FINAL_PROC_CHECK",
+            first.finalCheck,
+            productSheet.name,
+            row,
+            "final_proc_check_kbn",
+          )
         : null;
       const values: Values = {
-        ...effective,
         parent_product_code: parent.code,
         child_product_code: productCode,
         order_no: order,
@@ -929,7 +951,6 @@ export function parseMaster(
   const permissions = new Map<string, { role: string; row: number }>();
   const outputs = new Map<string, MasterRecord>();
   const userOutputs = new Set<string>();
-  const patterns = { ...config.reportPatternIds, ...options.reportPatternIdByName };
   for (let row = definitions.permissions.startRow; row <= permissionSheet.rowCount; row++) {
     const cols = definitions.permissions.columns;
     const login = text(permissionSheet, row, cols.login),
@@ -950,7 +971,7 @@ export function parseMaster(
         "ログインIDに対応する既存ユーザIDを参照設定に登録してください。",
         login,
       );
-    const roleCode = code(config.roles, role, permissionSheet.name, row, "role_kbn");
+    const roleCode = code("KBN_ROLE", role, permissionSheet.name, row, "role_kbn");
     const prior = permissions.get(login);
     if (prior && prior.role !== role)
       report(
@@ -966,7 +987,7 @@ export function parseMaster(
         "r_authority",
         permissionSheet,
         row,
-        { ...departmental, ...effective, user_id: user ?? null, role_kbn: roleCode },
+        { ...departmental, user_id: user ?? null, role_kbn: roleCode },
         { user_id: `A${row}`, role_kbn: `E${row}` },
       );
     }
@@ -979,7 +1000,13 @@ export function parseMaster(
       );
       continue;
     }
-    const patternId = code(patterns, pattern, permissionSheet.name, row, "report_pattern_id");
+    const patternId = code(
+      "KBN_PRINT_PATTERN",
+      pattern,
+      permissionSheet.name,
+      row,
+      "report_pattern_id",
+    );
     const key = `${patternId}\u0000${path}`;
     let output = outputs.get(key);
     if (!output) {
@@ -1009,6 +1036,22 @@ export function parseMaster(
       { user_id: user ?? null, dept_output_id: ref(output, "dept_output_id") },
       { user_id: `A${row}` },
     );
+  }
+  // Quantity is required only if a structure record actually needs a value and
+  // the selected schema supplies no nullable/default/identity behavior.
+  const quantity = definition
+    .find((t) => t.name === "r_product_structures")
+    ?.columns.find((c) => c.name === "quantity");
+  if (
+    !options.defaultQuantity &&
+    data.some((record) => record.targetTable === "r_product_structures") &&
+    (!quantity || (!quantity.nullable && !hasDefault(quantity) && !isAutoIncrement(quantity)))
+  ) {
+    configurationError(
+      "defaultQuantity",
+      "構成数量を設定してください。対象テーブルに使用できる既定値がありません。",
+    );
+    return { file, data: [], tables: [], totalRecords: 0, issues };
   }
   if (data.length === 1)
     report("マスタファイル", 0, "records", "取込対象のマスタデータがありません。");

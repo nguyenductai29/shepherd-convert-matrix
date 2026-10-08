@@ -1,5 +1,6 @@
 // Async boundary between worker processing and the UI orchestration.
 import type { ConversionOptions } from "@/config/shepherd-master";
+import type { KbnDefinition } from "@/models/kbn";
 import type {
   FormatCheckResult,
   MasterParseResult,
@@ -42,6 +43,7 @@ export interface SqlGeneratorService {
 }
 
 export interface ProcessingServices {
+  kbnDefinition: { load(file: SelectedFile): Promise<KbnDefinition[]> };
   tableDefinition: TableDefinitionService;
   formatCheck: FormatCheckService;
   masterParser: MasterParserService;
