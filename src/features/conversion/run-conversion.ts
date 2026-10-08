@@ -6,6 +6,8 @@ import { logEvent } from "@/services/platform/logging";
 import { saveConversionArtifacts } from "@/services/platform/files";
 import type { LocalSettings } from "@/services/platform/local-settings";
 import { CONFIRMED_CONVERSION_DEFAULTS } from "@/services/processing/conversion-defaults";
+import { buildConversionContext } from "@/services/processing/conversion-context";
+import type { SerializableConversionContext } from "@/models/references";
 
 let revision = 0;
 export function invalidateConversion() {
@@ -55,6 +57,7 @@ export async function runAnalysis(state: ConversionState, patch: Patch, settings
   if (
     !state.masterFile ||
     !state.tableDefinitionFile ||
+    state.referenceLoading ||
     PROCESSING.includes(state.conversionStatus)
   )
     return;
@@ -84,8 +87,37 @@ export async function runAnalysis(state: ConversionState, patch: Patch, settings
       errorDetail: null,
       historyId: current.historyId,
       savedDirectory: null,
+      resolvedDepartment: null,
       progressMessage: "ファイル読込中",
     });
+    phase = "参照データを確認してください。";
+    // Resolve prerequisites once before workbook parsing to avoid cascading field errors.
+    const conversionOptions = {
+      defaultQuantity: settings.defaultQuantity,
+      kbnDefinitions: settings.kbnDefinitions,
+      departmentReferences: state.departmentReference?.rows ?? [],
+    };
+    let context: SerializableConversionContext;
+    try {
+      if (!state.departmentReferenceFile || !state.departmentReference)
+        throw new Error("部門マスタを選択してください。");
+      const resolved = buildConversionContext(
+        state.masterFile.name,
+        conversionOptions.departmentReferences,
+        conversionOptions.kbnDefinitions,
+      );
+      context = {
+        department: resolved.department,
+        auditUserId: resolved.auditUserId,
+        effectiveFrom: resolved.effectiveFrom,
+        effectiveTo: resolved.effectiveTo,
+        productManagementKbn: resolved.productManagementKbn,
+      };
+    } catch (error) {
+      phase = error instanceof Error ? error.message : phase;
+      throw error;
+    }
+    update({ resolvedDepartment: context.department });
     phase = "テーブル定義書の解析に失敗しました。";
     update({ progressMessage: "テーブル定義解析中" });
     const definition =
@@ -105,7 +137,12 @@ export async function runAnalysis(state: ConversionState, patch: Patch, settings
     }
     phase = "マスタデータの解析に失敗しました。";
     update({ conversionStatus: "parsing", progressMessage: "マスタ解析中・データ変換中" });
-    const parsedData = await services.masterParser.parse(state.masterFile, definition, settings);
+    const parsedData = await services.masterParser.parse(
+      state.masterFile,
+      definition,
+      conversionOptions,
+      context,
+    );
     phase = "マスタデータの検証に失敗しました。";
     update({
       parsedData,
@@ -220,6 +257,9 @@ export async function saveConversion(
         formatVersion: "shepherd-matrix-2026-10",
         master: state.masterFile,
         definition: state.tableDefinitionFile,
+        departmentReference: state.departmentReferenceFile,
+        department: state.resolvedDepartment,
+        kbnDefinition: state.kbnDefinitionFile,
         records: state.parsedData.data,
       },
     });

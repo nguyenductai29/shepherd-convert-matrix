@@ -28,9 +28,18 @@ import { fileFromPath } from "@/services/platform/files";
 import { listHistory, type HistoryEntry } from "@/services/platform/history";
 import { invalidateConversion } from "@/features/conversion/run-conversion";
 import { services } from "@/services";
+import type { DepartmentReferenceLoadResult, DepartmentRow } from "@/models/references";
+import { dirname } from "@/services/platform/runtime";
 
 export interface ConversionState {
   tableDefinitionFile: SelectedFile | null;
+  tableDefinitionError: string | null;
+  departmentReferenceFile: SelectedFile | null;
+  departmentReference: DepartmentReferenceLoadResult | null;
+  departmentReferenceError: string | null;
+  kbnDefinitionFile: SelectedFile | null;
+  resolvedDepartment: DepartmentRow | null;
+  referenceLoading: boolean;
   masterFile: SelectedFile | null;
   tableDefinition: TableDefinitionLoadResult | null;
   formatCheckResult: FormatCheckResult | null;
@@ -46,6 +55,13 @@ export interface ConversionState {
 }
 export const initialConversion: ConversionState = {
   tableDefinitionFile: null,
+  tableDefinitionError: null,
+  departmentReferenceFile: null,
+  departmentReference: null,
+  departmentReferenceError: null,
+  kbnDefinitionFile: null,
+  resolvedDepartment: null,
+  referenceLoading: false,
   masterFile: null,
   tableDefinition: null,
   formatCheckResult: null,
@@ -73,6 +89,7 @@ interface AppState {
 }
 const Ctx = createContext<AppState | null>(null);
 const clearedResults = {
+  resolvedDepartment: null,
   formatCheckResult: null,
   parsedData: null,
   validationResult: null,
@@ -87,6 +104,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [conversion, setConversion] = useState<ConversionState>(initialConversion);
   const [settings, setSettingsRaw] = useState<LocalSettings>(defaultSettings);
   const settingsRef = useRef(settings);
+  const loadingSources = useRef(new Set<string>());
+  const markLoading = useCallback((kind: string, loading: boolean) => {
+    if (loading) loadingSources.current.add(kind);
+    else loadingSources.current.delete(kind);
+    setConversion((c) => ({ ...c, referenceLoading: loadingSources.current.size > 0 }));
+  }, []);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [systemDark, setSystemDark] = useState(false);
@@ -120,6 +143,30 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         settingsRef.current = saved;
         setSettingsRaw(saved);
         if (saved.kbnSourceError) setStartupError(saved.kbnSourceError);
+        if (saved.kbnSource) {
+          const source = saved.kbnSource;
+          // KBN data is a validated local snapshot; the original JSON need not remain open.
+          setConversion((c) => ({
+            ...c,
+            kbnDefinitionFile: c.kbnDefinitionFile ?? {
+              kind: "kbnDefinition",
+              name: source.name,
+              path: source.path,
+              extension: ".json",
+              size: source.size ?? null,
+              modifiedAt: source.modifiedAt ?? null,
+            },
+          }));
+        }
+        if (saved.lastDepartmentReferencePath) {
+          const file = await fileFromPath("departmentReference", saved.lastDepartmentReferencePath);
+          if (!active) return;
+          if (file)
+            setConversion((c) =>
+              c.departmentReferenceFile ? c : { ...c, departmentReferenceFile: file },
+            );
+          else setStartupError("設定済みの部門マスタが見つかりません。再選択してください。");
+        }
         if (saved.lastTableDefinitionPath) {
           const file = await fileFromPath("tableDefinition", saved.lastTableDefinitionPath);
           if (!active) return;
@@ -147,14 +194,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .load(file)
       .then((definition) => {
         if (!active) return;
-        setConversion((c) => ({ ...c, tableDefinition: definition, progressMessage: null }));
-        setStartupError(settingsRef.current.kbnSourceError);
+        setConversion((c) => ({
+          ...c,
+          tableDefinition: definition,
+          tableDefinitionError: null,
+          progressMessage: null,
+        }));
+        setStartupError((error) => (error?.includes("設定済みのテーブル定義書") ? null : error));
       })
       .catch((error) => {
         if (!active) return;
         setConversion((c) => ({
           ...c,
           tableDefinition: null,
+          tableDefinitionError:
+            error instanceof Error ? error.message : "テーブル定義書の解析に失敗しました。",
           progressMessage: null,
           errorMessage: "テーブル定義書の解析に失敗しました。",
           errorDetail: String(error),
@@ -165,6 +219,113 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, [conversion.tableDefinitionFile]);
+  useEffect(() => {
+    const file = conversion.departmentReferenceFile;
+    if (!file) return;
+    let active = true;
+    markLoading("departmentReference", true);
+    void services.departmentReference
+      .load(file)
+      .then((reference) => {
+        if (!active) return;
+        setConversion((c) => ({
+          ...c,
+          departmentReference: reference,
+          departmentReferenceError: null,
+        }));
+        setStartupError((error) => (error?.includes("設定済みの部門マスタ") ? null : error));
+      })
+      .catch((error) => {
+        if (!active) return;
+        setConversion((c) => ({
+          ...c,
+          departmentReference: null,
+          departmentReferenceError:
+            error instanceof Error ? error.message : "部門マスタの読み込みに失敗しました。",
+          errorMessage: "部門マスタの読み込みに失敗しました。",
+          errorDetail: String(error),
+          conversionStatus: "failed",
+        }));
+      })
+      .finally(() => {
+        if (active) markLoading("departmentReference", false);
+      });
+    return () => {
+      active = false;
+      markLoading("departmentReference", false);
+    };
+  }, [conversion.departmentReferenceFile, markLoading]);
+  const pendingKbnFile = useRef<SelectedFile | null>(null);
+  useEffect(() => {
+    const file = conversion.kbnDefinitionFile;
+    // Restored snapshots already contain validated rows; only new selections read source bytes.
+    if (!file || pendingKbnFile.current !== file) return;
+    let active = true;
+    markLoading("kbnDefinition", true);
+    void (async () => {
+      try {
+        const kbnDefinitions = await services.kbnDefinition.load(file);
+        if (!kbnDefinitions.length)
+          throw new Error("区分名称マスタに有効な区分データがありません。");
+        if (!active) return;
+        const saved = await updateSettings({
+          kbnDefinitions,
+          kbnSource: {
+            name: file.name,
+            path: file.path,
+            loadedAt: new Date().toISOString(),
+            size: file.size,
+            modifiedAt: file.modifiedAt ?? null,
+          },
+          kbnSourceError: null,
+        });
+        if (!active) return;
+        invalidateConversion();
+        setConversion((c) => ({
+          ...c,
+          ...clearedResults,
+          conversionStatus: c.masterFile && c.tableDefinitionFile ? "file-selected" : "idle",
+        }));
+        const previousSourceError = settingsRef.current.kbnSourceError;
+        settingsRef.current = saved;
+        setSettingsRaw(saved);
+        setStartupError((error) =>
+          error === previousSourceError || error?.includes("KBN定義") ? null : error,
+        );
+      } catch (error) {
+        if (!active) return;
+        const message = "区分名称マスタの読み込みに失敗しました。";
+        setConversion((c) => ({
+          ...c,
+          errorMessage: message,
+          errorDetail: String(error),
+          conversionStatus: "failed",
+        }));
+        try {
+          const saved = await updateSettings({
+            kbnDefinitions: [],
+            kbnSource: null,
+            kbnSourceError: message,
+          });
+          if (active) {
+            settingsRef.current = saved;
+            setSettingsRaw(saved);
+          }
+        } catch {
+          if (active) setStartupError("ローカル設定を保存できませんでした。");
+        }
+      } finally {
+        if (active) {
+          pendingKbnFile.current = null;
+          markLoading("kbnDefinition", false);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+      markLoading("kbnDefinition", false);
+    };
+  }, [conversion.kbnDefinitionFile, markLoading]);
   const patchConversion = useCallback(
     (patch: Partial<ConversionState>) => setConversion((c) => ({ ...c, ...patch })),
     [],
@@ -178,16 +339,58 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
   const setFile = useCallback((file: SelectedFile | null, kind: ConversionFileKind) => {
-    if (kind !== "master" && kind !== "tableDefinition") return;
     if (file && file.kind !== kind) return;
     invalidateConversion();
+    if (kind === "kbnDefinition") {
+      pendingKbnFile.current = file;
+      const next = {
+        ...settingsRef.current,
+        kbnDefinitions: [],
+        kbnSource: null,
+        kbnSourceError: null,
+      };
+      settingsRef.current = next;
+      setSettingsRaw(next);
+      void updateSettings({ kbnDefinitions: [], kbnSource: null, kbnSourceError: null }).catch(() =>
+        setStartupError("ローカル設定を保存できませんでした。"),
+      );
+    } else {
+      const patch =
+        kind === "tableDefinition"
+          ? { lastTableDefinitionPath: file?.path ?? null }
+          : kind === "departmentReference"
+            ? { lastDepartmentReferencePath: file?.path ?? null }
+            : file?.path
+              ? { lastMasterDirectory: dirname(file.path) }
+              : {};
+      if (Object.keys(patch).length) {
+        settingsRef.current = { ...settingsRef.current, ...patch };
+        setSettingsRaw(settingsRef.current);
+        void updateSettings(patch).catch(() =>
+          setStartupError("ローカル設定を保存できませんでした。"),
+        );
+      }
+    }
+    const fileKey = {
+      master: "masterFile",
+      tableDefinition: "tableDefinitionFile",
+      departmentReference: "departmentReferenceFile",
+      kbnDefinition: "kbnDefinitionFile",
+    } as const;
     setConversion((c) => {
       const next = {
         ...c,
         ...clearedResults,
-        [kind === "master" ? "masterFile" : "tableDefinitionFile"]: file,
+        [fileKey[kind]]: file,
       };
-      if (kind === "tableDefinition") next.tableDefinition = null;
+      if (kind === "tableDefinition") {
+        next.tableDefinition = null;
+        next.tableDefinitionError = null;
+      }
+      if (kind === "departmentReference") {
+        next.departmentReference = null;
+        next.departmentReferenceError = null;
+      }
       next.conversionStatus =
         next.masterFile && next.tableDefinitionFile ? "file-selected" : "idle";
       return next;
@@ -196,21 +399,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const setSettings = useCallback(
     (next: LocalSettings) => {
       const previous = settingsRef.current;
+      if (previous.kbnSource !== next.kbnSource && !next.kbnSource) {
+        pendingKbnFile.current = null;
+        setConversion((c) => ({ ...c, kbnDefinitionFile: null }));
+      }
       if (previous.kbnSourceError !== next.kbnSourceError) {
         setStartupError((current) =>
           current === previous.kbnSourceError ? next.kbnSourceError : current,
         );
       }
       {
-        const keys = [
-          "departmentCode",
-          "departmentName",
-          "defaultQuantity",
-          "userIdByLogin",
-          "kbnDefinitions",
-          "kbnSource",
-          "kbnSourceError",
-        ] as const;
+        const keys = ["defaultQuantity", "kbnDefinitions", "kbnSource", "kbnSourceError"] as const;
         if (keys.some((key) => JSON.stringify(previous[key]) !== JSON.stringify(next[key])))
           resetResults();
         else if (

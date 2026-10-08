@@ -49,7 +49,7 @@ function ConvertPage() {
     parsedData,
     validationResult: vr,
   } = conversion;
-  const busy = PROCESSING.includes(status);
+  const busy = conversion.referenceLoading || PROCESSING.includes(status);
   const preview = parsedData?.data.slice(0, 25) ?? [];
   const relations = (parsedData?.data ?? []).flatMap((record) =>
     Object.entries(record.values)
@@ -66,6 +66,9 @@ function ConvertPage() {
     !!conversion.masterFile &&
     !!conversion.tableDefinitionFile &&
     !!conversion.tableDefinition &&
+    !!conversion.departmentReference &&
+    settings.kbnDefinitions.length > 0 &&
+    !settings.kbnSourceError &&
     !busy;
   const canGenerate =
     (status === "ready-to-generate" || status === "completed") && vr?.errorCount === 0;
@@ -118,6 +121,37 @@ function ConvertPage() {
               <FilePickerCard kind="tableDefinition" />
             </div>
           </Section>
+          <Section title="部門マスタ">
+            <div className="space-y-3 p-4">
+              <p className="text-xs text-muted-foreground">
+                既存のm_departmentsデータ（部門ID・部門コード・部門名）
+              </p>
+              <FilePickerCard kind="departmentReference" />
+              {conversion.departmentReferenceError && (
+                <p role="alert" className="whitespace-pre-wrap text-xs text-destructive">
+                  {conversion.departmentReferenceError}
+                </p>
+              )}
+            </div>
+          </Section>
+          <Section title="区分名称マスタ">
+            <div className="space-y-3 p-4">
+              <p className="text-xs text-muted-foreground">
+                m_kbn_definitionのJSONから区分名称と値を解決します
+              </p>
+              <FilePickerCard kind="kbnDefinition" />
+              {settings.kbnSourceError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {settings.kbnSourceError}
+                </p>
+              )}
+              {settings.kbnDefinitions.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  読込済み: {settings.kbnDefinitions.length}件
+                </p>
+              )}
+            </div>
+          </Section>
           <Section title="マスタ整備ファイル">
             <div className="space-y-3 p-4">
               <p className="text-xs text-muted-foreground">
@@ -128,11 +162,22 @@ function ConvertPage() {
           </Section>
         </div>
 
+        {conversion.resolvedDepartment && (
+          <div className="flex items-center gap-4 rounded-md border bg-card px-4 py-3 text-sm">
+            <span className="text-muted-foreground">部門</span>
+            <span className="font-mono">{conversion.resolvedDepartment.departmentCode}</span>
+            <span>{conversion.resolvedDepartment.departmentName}</span>
+            <span className="font-mono text-xs text-muted-foreground">
+              ID: {conversion.resolvedDepartment.departmentId}
+            </span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-4 rounded-md border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">
             {canStart || busy
               ? "フォーマット確認 → データ解析 → 検証 を実行します。"
-              : "テーブル定義書とマスタ整備ファイルを選択してください。"}
+              : "テーブル定義書・部門マスタ・区分名称マスタ・マスタ整備ファイルを選択してください。"}
           </p>
           <Button
             onClick={() => runAnalysis(conversion, patchConversion, settings)}
@@ -140,7 +185,9 @@ function ConvertPage() {
           >
             {busy ? <Loader2 className="animate-spin" /> : <Play />}
             {busy
-              ? (conversion.progressMessage ?? STATUS_LABEL[status])
+              ? conversion.referenceLoading
+                ? "参照ファイル読込中"
+                : (conversion.progressMessage ?? STATUS_LABEL[status])
               : checks
                 ? "再実行"
                 : "変換を開始"}

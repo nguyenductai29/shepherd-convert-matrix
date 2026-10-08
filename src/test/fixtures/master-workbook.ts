@@ -1,11 +1,22 @@
 import ExcelJS from "exceljs";
-import { EMPTY_CONVERSION_OPTIONS, shepherdMasterDefinition } from "@/config/shepherd-master";
+import {
+  EMPTY_CONVERSION_OPTIONS,
+  shepherdMasterDefinition,
+  type ConversionOptions,
+} from "@/config/shepherd-master";
 import { kbnFixture } from "./kbn-definitions";
 
-export const masterFixtureOptions = {
+export const masterFixtureOptions: ConversionOptions = {
   ...EMPTY_CONVERSION_OPTIONS,
-  departmentCode: "35",
-  departmentName: "35部門",
+  departmentReferences: [
+    {
+      departmentId: 123,
+      departmentCode: "35",
+      departmentName: "35部門",
+      editCtrlKbn: "0",
+      invalidFlg: false,
+    },
+  ],
   defaultQuantity: "1",
   kbnDefinitions: kbnFixture,
 };

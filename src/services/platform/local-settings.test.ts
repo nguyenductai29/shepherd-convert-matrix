@@ -36,24 +36,24 @@ describe("local settings persistence", () => {
     expect(await loadSettings()).toMatchObject({ sqlComments: false, theme: "dark" });
   });
 
-  it("retains confirmed customer values and safely validates user reference dictionaries", async () => {
+  it("persists the department source path and quantity while removing obsolete manual references", async () => {
     await updateSettings({
-      departmentCode: "HPK",
-      departmentName: "製造部門",
+      lastDepartmentReferencePath: "C:\\部署.xlsx",
       defaultQuantity: "1.5",
-      userIdByLogin: { tai: "123" },
     });
     expect(await loadSettings()).toMatchObject({
-      departmentCode: "HPK",
-      departmentName: "製造部門",
+      lastDepartmentReferencePath: "C:\\部署.xlsx",
       defaultQuantity: "1.5",
-      userIdByLogin: { tai: "123" },
     });
     localStorage.setItem(
       "shepherd-local-settings",
-      JSON.stringify({ userIdByLogin: { tai: "123", invalid: 2 } }),
+      JSON.stringify({
+        departmentCode: "OLD",
+        departmentName: "旧部署",
+        userIdByLogin: { tai: "123", invalid: 2 },
+      }),
     );
-    expect((await loadSettings()).userIdByLogin).toEqual({ tai: "123" });
+    expect(await loadSettings()).toEqual(defaultSettings);
   });
 
   it("persists a validated KBN snapshot and its local source across reloads", async () => {
@@ -97,7 +97,6 @@ describe("local settings persistence", () => {
       }),
     );
     expect(await loadSettings()).toMatchObject({
-      departmentCode: "CUSTOMER",
       kbnDefinitions: [],
       kbnSource: { name: "区分.json", path: "C:\\区分.json" },
       kbnSourceError: expect.stringContaining("再読込"),

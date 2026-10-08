@@ -9,6 +9,7 @@ import { readSelectedFile } from "@/services/platform/files";
 import type { KbnDefinition } from "@/models/kbn";
 import { invalidateConversion } from "@/features/conversion/run-conversion";
 import { toast } from "sonner";
+import { FilePickerCard } from "@/components/shepherd/workflow";
 
 const nativeSettings = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
@@ -49,7 +50,7 @@ const rows = [
   { category_kbn_code: "KBN_PRODUCT_MANAGEMENT", kbn_name: "Shepherd", kbn_value: "7" },
 ];
 
-describe("local KBN settings", () => {
+describe("app settings and conversion reference loading", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
@@ -71,6 +72,7 @@ describe("local KBN settings", () => {
       view = render(
         <AppStateProvider>
           <Settings />
+          <FilePickerCard kind="kbnDefinition" />
           <Probe />
         </AppStateProvider>,
       );
@@ -78,48 +80,47 @@ describe("local KBN settings", () => {
     return view;
   };
   const selectFile = (contents: string) =>
-    fireEvent.change(screen.getByLabelText("KBN定義ファイル"), {
+    fireEvent.change(screen.getByLabelText("区分名称マスタファイル"), {
       target: { files: [new File([contents], "区分.json")] },
     });
 
-  it("loads and persists a real browser JSON snapshot while preserving unsaved department input", async () => {
+  it("keeps only quantity and app settings editable while reference imports persist locally", async () => {
     await openSettings();
-    const requiredInputs = screen.getAllByPlaceholderText("必須");
-    fireEvent.change(requiredInputs[0]!, { target: { value: "CUSTOMER" } });
+    expect(screen.getAllByRole("textbox")).toHaveLength(1);
+    expect(screen.queryByText("部門コード", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("部門名", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("ログインID → ユーザーID", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("登録・更新ユーザーID", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("適用開始日", { exact: true })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "品目構成の数量" }), {
+      target: { value: "2.5" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "設定を保存" }));
+    await waitFor(() => expect(state.settings.defaultQuantity).toBe("2.5"));
     selectFile(JSON.stringify(rows));
-    await waitFor(() => expect(screen.getByDisplayValue("Shepherd → 7")).toBeInTheDocument());
+    await waitFor(() => expect(state.settings.kbnDefinitions).toEqual(rows));
     expect(await loadSettings()).toMatchObject({
+      defaultQuantity: "2.5",
       kbnDefinitions: rows,
       kbnSource: { name: "区分.json", path: null },
     });
-    expect(screen.getByDisplayValue("CUSTOMER")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("1（自動設定）")).toHaveAttribute("readonly");
   });
 
-  it("retains the prior definitions and source when a new source is invalid", async () => {
-    await openSettings();
-    selectFile(JSON.stringify(rows));
-    await waitFor(() => expect(screen.getByDisplayValue("Shepherd → 7")).toBeInTheDocument());
-    selectFile('{"invalid":true}');
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "KBN定義を選択" })).toBeEnabled(),
-    );
-    expect((await loadSettings()).kbnDefinitions).toEqual(rows);
-    expect(state.settings.kbnDefinitions).toEqual(rows);
-  });
+  it.each(['{"invalid":true}', "[]"])(
+    "blocks a replacement invalid reference instead of using stale values: %s",
+    async (contents) => {
+      await openSettings();
+      selectFile(JSON.stringify(rows));
+      await waitFor(() => expect(state.settings.kbnDefinitions).toEqual(rows));
+      selectFile(contents);
+      await waitFor(() => expect(state.conversion.referenceLoading).toBe(false));
+      expect((await loadSettings()).kbnDefinitions).toEqual([]);
+      expect(state.settings.kbnDefinitions).toEqual([]);
+      expect(state.settings.kbnSourceError).toContain("区分名称マスタ");
+    },
+  );
 
-  it("does not replace a valid snapshot with an empty import", async () => {
-    await openSettings();
-    selectFile(JSON.stringify(rows));
-    await waitFor(() => expect(screen.getByDisplayValue("Shepherd → 7")).toBeInTheDocument());
-    selectFile("[]");
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "KBN定義を選択" })).toBeEnabled(),
-    );
-    expect((await loadSettings()).kbnDefinitions).toEqual(rows);
-  });
-
-  it("discards a late source read when settings have changed", async () => {
+  it("discards a late source read after the selected reference is cleared", async () => {
     let finish!: (value: KbnDefinition[]) => void;
     vi.mocked(services.kbnDefinition.load).mockImplementation(
       () =>
@@ -129,11 +130,11 @@ describe("local KBN settings", () => {
     );
     await openSettings();
     selectFile(JSON.stringify(rows));
-    act(() => state.setSettings({ ...state.settings, departmentCode: "NEW" }));
+    act(() => state.setFile(null, "kbnDefinition"));
     await act(async () => finish(rows));
     expect((await loadSettings()).kbnDefinitions).toEqual([]);
     expect(state.settings.kbnDefinitions).toEqual([]);
-    expect(screen.getByRole("button", { name: "KBN定義を選択" })).toBeEnabled();
+    expect(state.conversion.referenceLoading).toBe(false);
   });
 
   it("synchronizes a committed KBN import after navigating away during native persistence", async () => {

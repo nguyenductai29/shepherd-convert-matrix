@@ -7,7 +7,7 @@ import type {
   SqlOptions,
   TableDefinitionLoadResult,
 } from "@/models";
-import { SHEPHERD_TABLE_ORDER } from "@/config/shepherd-master";
+import { EXCLUDED_CONVERSION_TABLES, SHEPHERD_TABLE_ORDER } from "@/config/shepherd-master";
 import { orderRecords } from "./dependency-order";
 import { validateMaster } from "./validation";
 import { checkValue, isAutoIncrement, isReference, literalDefault } from "./value-validation";
@@ -55,6 +55,11 @@ export function generateSql(
   definition: TableDefinitionLoadResult,
   options: SqlOptions,
 ): SqlGenerationResult {
+  const excluded = parsed.data.find((record) =>
+    EXCLUDED_CONVERSION_TABLES.some((table) => table === record.targetTable),
+  );
+  if (excluded)
+    throw new Error(`${excluded.targetTable} は変換対象外のため SQL を生成できません。`);
   // This guard intentionally lives at the public core boundary, independently of UI state.
   const validation = validateMaster(parsed, definition);
   if (validation.errorCount > 0)

@@ -4,6 +4,8 @@ import { validateMasterFormat, parseMaster } from "./master-parser";
 import { validateMaster } from "./validation";
 import { generateSql } from "./sql-generator";
 import { parseKbnDefinitions } from "./kbn-resolver";
+import { parseDepartmentReferenceFile } from "./department-reference";
+import type { SerializableConversionContext } from "@/models/references";
 import type {
   MasterParseResult,
   SelectedFile,
@@ -20,6 +22,7 @@ interface Request {
     definition: TableDefinitionLoadResult;
     parsed: MasterParseResult;
     options: ConversionOptions & SqlOptions;
+    context?: SerializableConversionContext;
   };
 }
 self.onmessage = async (event: MessageEvent<Request>) => {
@@ -27,6 +30,9 @@ self.onmessage = async (event: MessageEvent<Request>) => {
   try {
     let result: unknown;
     switch (operation) {
+      case "department-reference":
+        result = await parseDepartmentReferenceFile(payload.file, buffer!);
+        break;
       case "kbn-definition": {
         let source: unknown;
         try {
@@ -56,6 +62,7 @@ self.onmessage = async (event: MessageEvent<Request>) => {
           payload.file,
           payload.definition,
           payload.options,
+          payload.context,
         );
         break;
       case "validate":

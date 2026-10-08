@@ -41,19 +41,23 @@ The generated installers are unsigned unless the organization supplies its own s
 
 Tauri resolves the application data directory for identifier `jp.shepherd.master-sql-generator`; on Windows this is normally `%APPDATA%\jp.shepherd.master-sql-generator`.
 
-| Path                  | Contents                                                                                           |
-| --------------------- | -------------------------------------------------------------------------------------------------- |
-| `settings.json`       | Recent paths, SQL options, theme, department/quantity/user references, imported KBN snapshot and source metadata |
-| `history.sqlite3`     | Conversion history, validation results, source paths, and output paths                             |
-| `logs/shepherd.jsonl` | Timestamped actions and technical diagnostics                                                      |
+| Path                  | Contents                                                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json`       | Schema/department/master/output paths, SQL options, theme, configurable quantity, imported KBN snapshot and source metadata |
+| `history.sqlite3`     | Conversion history, validation results, source paths, and output paths                                                      |
+| `logs/shepherd.jsonl` | Timestamped actions and technical diagnostics                                                                               |
 
 SQLite uses WAL journaling and a five-second busy timeout. `history.sqlite3-wal` and `history.sqlite3-shm` may exist while the application is running. Close the application before backing up its whole data directory; do not copy only the SQLite main file while it is open.
 
 Logs rotate after 1 MiB, keeping five older files. Log entries are not intended to contain workbook rows, SQL text, or credentials. Open the log directory through **設定 → ログフォルダを開く**.
 
+The department workbook remains a separate local source. Desktop startup reloads it from its saved path, along with the schema workbook. Missing or unreadable sources require reselection. Department rows are not persisted as manual settings. The KBN definition is a validated local snapshot with source metadata; changing its original file requires reselection through **マスタ変換 → ファイルを変更**. Browser preview cannot reopen arbitrary local paths after a reload and therefore requires the department workbook to be selected again.
+
+Settings no longer accept department code/name, login-to-user JSON, audit IDs or effective dates. The filename resolves the department through its reference file. Audit IDs and dates are computed automatically for each conversion; only a confirmed product-structure quantity remains configurable when the schema supplies no default. Obsolete saved manual overrides are ignored.
+
 ## Native file access and output safety
 
-All Tauri API imports are guarded by the desktop runtime check in `src/services/platform`. Native file dialogs supply the source files and output directory. Source workbooks are read only; macros are not executed.
+All Tauri API imports are guarded by the desktop runtime check in `src/services/platform`. Native file dialogs supply the four local inputs (schema `.xlsx`, department `.xlsx`, KBN `.json`, master `.xlsm`/`.xlsx`) and the output directory. Source files are read only; macros are not executed. Selecting or replacing an input invalidates prior conversion/SQL results, including pending operations.
 
 Each export creates a unique subdirectory of the chosen output directory. A successful export contains:
 
@@ -65,3 +69,7 @@ Each export creates a unique subdirectory of the chosen output directory. A succ
 Text output uses UTF-8. Reports can be exported after failed validation, but SQL is explicitly rejected. The saved SQL is the exact preview text. Export files are first written to a uniquely named `.partial` staging directory; the folder receives its final name only after all writes succeed. Failed writes remove the staging directory when the filesystem allows cleanup. A power loss can leave a `.partial` folder, which is never recorded as a completed export.
 
 The production content security policy permits local resources and Tauri IPC. The development policy additionally permits the localhost Vite connection. File permissions support the native user-selected paths, report creation, final directory rename, and removal of failed staging output. There is no HTTP client or database execution command.
+
+## Application branding
+
+The sidebar and Windows executable/installer use the compact symbol from the supplied Shepherd logo. The original full wordmark stays unchanged in `assets/ShepherdSQL.png`; `src-tauri/app-icon.svg` frames the symbol without distortion, and Tauri generates the platform icon sizes. See [branding asset instructions](../assets/README.md) for regeneration commands.

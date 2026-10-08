@@ -128,4 +128,34 @@ describe("native file drops", () => {
     )();
     expect(native.getCurrentWebview).not.toHaveBeenCalled();
   });
+
+  it("keeps department and KBN reference selections separate from workbook paths", async () => {
+    const onFile = vi.fn();
+    let unlisten = await subscribeNativeFileDrop("departmentReference", {
+      containsPoint: () => true,
+      onFile,
+      onError: vi.fn(),
+    });
+    await native.listener!({
+      payload: { type: "drop", paths: ["C:\\部署.xlsx"], position: { x: 0, y: 0 } },
+    });
+    expect(native.settings.get("lastDepartmentReferencePath")).toBe("C:\\部署.xlsx");
+    expect(native.settings.get("lastTableDefinitionPath")).toBeNull();
+    expect(native.settings.get("lastMasterDirectory")).toBeNull();
+    unlisten();
+    unlisten = await subscribeNativeFileDrop("kbnDefinition", {
+      containsPoint: () => true,
+      onFile,
+      onError: vi.fn(),
+    });
+    await native.listener!({
+      payload: { type: "drop", paths: ["C:\\区分.json"], position: { x: 0, y: 0 } },
+    });
+    expect(onFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "kbnDefinition", name: "区分.json" }),
+    );
+    expect(native.settings.get("kbnSource")).toBeNull();
+    expect(native.settings.get("lastMasterDirectory")).toBeNull();
+    unlisten();
+  });
 });

@@ -2,6 +2,10 @@
 import type { ConversionOptions } from "@/config/shepherd-master";
 import type { KbnDefinition } from "@/models/kbn";
 import type {
+  DepartmentReferenceLoadResult,
+  SerializableConversionContext,
+} from "@/models/references";
+import type {
   FormatCheckResult,
   MasterParseResult,
   SelectedFile,
@@ -24,6 +28,7 @@ export interface MasterParserService {
     master: SelectedFile,
     definition: TableDefinitionLoadResult,
     options: ConversionOptions,
+    context?: SerializableConversionContext,
   ): Promise<MasterParseResult>;
 }
 
@@ -43,6 +48,7 @@ export interface SqlGeneratorService {
 }
 
 export interface ProcessingServices {
+  departmentReference: { load(file: SelectedFile): Promise<DepartmentReferenceLoadResult> };
   kbnDefinition: { load(file: SelectedFile): Promise<KbnDefinition[]> };
   tableDefinition: TableDefinitionService;
   formatCheck: FormatCheckService;

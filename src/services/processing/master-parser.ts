@@ -18,7 +18,9 @@ import {
 } from "@/config/shepherd-master";
 import { cellText, cellValue, normalizedHeader } from "./workbook";
 import { KbnResolver } from "./kbn-resolver";
-import { confirmedDefaults, localDate } from "./conversion-defaults";
+import { confirmedDefaults } from "./conversion-defaults";
+import { buildConversionContext } from "./conversion-context";
+import type { ConversionContext, SerializableConversionContext } from "@/models/references";
 import { hasDefault, isAutoIncrement } from "./value-validation";
 
 type Values = MasterRecord["values"];
@@ -164,6 +166,7 @@ export function parseMaster(
   file: SelectedFile,
   definitionsOrResult: TableDefinition[] | TableDefinitionLoadResult,
   options: ConversionOptions = EMPTY_CONVERSION_OPTIONS,
+  snapshot?: SerializableConversionContext,
 ): MasterParseResult {
   const definition = Array.isArray(definitionsOrResult)
     ? definitionsOrResult
@@ -241,20 +244,14 @@ export function parseMaster(
       message,
     });
   };
-  for (const [key, label] of Object.entries({
-    departmentCode: "部門コード",
-    departmentName: "部門名",
-  })) {
-    if (!String(options[key as keyof ConversionOptions] ?? "").trim())
-      configurationError(key, `${label}は未確定です。確認済みの値を設定してください。`);
-  }
-  let resolver: KbnResolver;
-  let productManagementKbn = "";
+  let context: ConversionContext;
   try {
-    resolver = new KbnResolver(options.kbnDefinitions);
-    productManagementKbn = resolver.resolve("KBN_PRODUCT_MANAGEMENT", "Shepherd");
+    context = snapshot
+      ? { ...snapshot, kbnResolver: new KbnResolver(options.kbnDefinitions) }
+      : buildConversionContext(file.name, options.departmentReferences, options.kbnDefinitions);
   } catch (error) {
-    configurationError("kbnDefinitions", String(error instanceof Error ? error.message : error));
+    configurationError("references", String(error instanceof Error ? error.message : error));
+    return { file, data: [], tables: [], totalRecords: 0, issues };
   }
   if (
     options.defaultQuantity &&
@@ -263,7 +260,7 @@ export function parseMaster(
     configurationError("defaultQuantity", "構成数量は正の数を指定してください。");
   if (issues.some((issue) => issue.severity === "error"))
     return { file, data: [], tables: [], totalRecords: 0, issues };
-  const today = localDate();
+  const { kbnResolver: resolver, productManagementKbn } = context;
   const add = (
     table: string,
     sheet: ExcelJS.Worksheet | string,
@@ -289,7 +286,7 @@ export function parseMaster(
         ...values,
         ...confirmedDefaults(
           definition.find((t) => t.name === table),
-          today,
+          context,
         ),
       },
       originalValues,
@@ -323,11 +320,7 @@ export function parseMaster(
       return null;
     }
   };
-  const department = add("m_departments", "変換設定", 0, {
-    department_code: options.departmentCode,
-    department_name: options.departmentName,
-  });
-  const departmental: Values = { department_id: ref(department, "department_id") };
+  const departmental: Values = { department_id: context.department.departmentId };
 
   const majorSheet = workbook.getWorksheet(definitions.major.name)!;
   const majors = new Map<string, MasterRecord>();
@@ -948,49 +941,13 @@ export function parseMaster(
   }
 
   const permissionSheet = workbook.getWorksheet(definitions.permissions.name)!;
-  const permissions = new Map<string, { role: string; row: number }>();
   const outputs = new Map<string, MasterRecord>();
-  const userOutputs = new Set<string>();
   for (let row = definitions.permissions.startRow; row <= permissionSheet.rowCount; row++) {
     const cols = definitions.permissions.columns;
-    const login = text(permissionSheet, row, cols.login),
-      role = text(permissionSheet, row, cols.role),
-      pattern = text(permissionSheet, row, cols.pattern),
+    const pattern = text(permissionSheet, row, cols.pattern),
       path = text(permissionSheet, row, cols.path);
-    if (!login && !role && !pattern && !path) continue;
-    if (!login) {
-      report(permissionSheet.name, row, "user_id", "ログインIDがありません。");
-      continue;
-    }
-    const user = options.userIdByLogin[login];
-    if (!user || !/^\d+$/.test(user) || Number(user) <= 0)
-      report(
-        permissionSheet.name,
-        row,
-        "user_id",
-        "ログインIDに対応する既存ユーザIDを参照設定に登録してください。",
-        login,
-      );
-    const roleCode = code("KBN_ROLE", role, permissionSheet.name, row, "role_kbn");
-    const prior = permissions.get(login);
-    if (prior && prior.role !== role)
-      report(
-        permissionSheet.name,
-        row,
-        "role_kbn",
-        `同じログインIDに異なる役割が指定されています (${prior.row}, ${row} 行)。`,
-        role,
-      );
-    if (!prior) {
-      permissions.set(login, { role, row });
-      add(
-        "r_authority",
-        permissionSheet,
-        row,
-        { ...departmental, user_id: user ?? null, role_kbn: roleCode },
-        { user_id: `A${row}`, role_kbn: `E${row}` },
-      );
-    }
+    // Login/role columns describe user assignments, which are outside the conversion scope.
+    if (!pattern && !path) continue;
     if (!pattern || !path) {
       report(
         permissionSheet.name,
@@ -1019,23 +976,6 @@ export function parseMaster(
       );
       outputs.set(key, output);
     }
-    const userKey = `${login}\u0000${key}`;
-    if (userOutputs.has(userKey))
-      report(
-        permissionSheet.name,
-        row,
-        "user_id + dept_output_id",
-        "同じユーザの帳票出力先が重複しています。",
-        login,
-      );
-    userOutputs.add(userKey);
-    add(
-      "r_user_report_outputs",
-      permissionSheet,
-      row,
-      { user_id: user ?? null, dept_output_id: ref(output, "dept_output_id") },
-      { user_id: `A${row}` },
-    );
   }
   // Quantity is required only if a structure record actually needs a value and
   // the selected schema supplies no nullable/default/identity behavior.
@@ -1053,7 +993,7 @@ export function parseMaster(
     );
     return { file, data: [], tables: [], totalRecords: 0, issues };
   }
-  if (data.length === 1)
+  if (data.length === 0)
     report("マスタファイル", 0, "records", "取込対象のマスタデータがありません。");
   const tableNames = Array.from(new Set(data.map((record) => record.targetTable)));
   const tables = tableNames.map((name) => {

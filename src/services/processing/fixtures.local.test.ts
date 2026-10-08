@@ -10,6 +10,7 @@ import { generateSql } from "./sql-generator";
 import { parseKbnDefinitions } from "./kbn-resolver";
 import { localDate } from "./conversion-defaults";
 import { masterFixtureOptions } from "@/test/fixtures/master-workbook";
+import { parseDepartmentReferenceWorkbook, resolveDepartment } from "./department-reference";
 
 const schemaPath = process.env["SHEPHERD_SCHEMA_FIXTURE"];
 const masterPath = process.env["SHEPHERD_MASTER_FIXTURE"];
@@ -36,7 +37,7 @@ describe.skipIf(!schemaPath || !masterPath)("private local workbook acceptance",
         .find((table) => table.name === "m_departments")
         ?.columns.some((column) => column.name === "department_code"),
     ).toBe(true);
-    const result = validateMasterFormat(master, masterPath!);
+    const result = validateMasterFormat(master, "35_Shepherd導入_マスタ整備ファイル.xlsm");
     expect(result.items.filter((item) => item.status === "error")).toEqual([]);
     expect(result.passed).toBe(true);
     // The valid customer format passes; unresolved common inputs stop at preflight.
@@ -44,7 +45,7 @@ describe.skipIf(!schemaPath || !masterPath)("private local workbook acceptance",
       master,
       {
         kind: "master",
-        name: masterPath!,
+        name: "35_Shepherd導入_マスタ整備ファイル.xlsm",
         path: masterPath!,
         extension: "xlsm",
         size: masterBytes.byteLength,
@@ -78,18 +79,32 @@ describe.skipIf(!schemaPath || !masterPath)("private local workbook acceptance",
       const definitions = parseKbnDefinitions(
         JSON.parse(await readFile(process.env["SHEPHERD_KBN_FIXTURE"]!, "utf8")),
       );
+      const departmentPath = process.env["SHEPHERD_DEPARTMENT_FIXTURE"];
+      const departmentBytes = departmentPath ? await readFile(departmentPath) : null;
+      const departmentReferences = departmentBytes
+        ? parseDepartmentReferenceWorkbook(
+            await readWorkbook(new Uint8Array(departmentBytes).buffer),
+          )
+        : masterFixtureOptions.departmentReferences;
+      const expectedDepartmentId = resolveDepartment("35", departmentReferences).departmentId;
       const file = {
         kind: "master" as const,
-        name: masterPath!,
+        name: "35_Shepherd導入_マスタ整備ファイル.xlsm",
         path: masterPath!,
         extension: "xlsm",
         size: null,
       };
       const parsed = parseMaster(await loadWorkbook(masterPath!), file, tables, {
         ...masterFixtureOptions,
+        departmentReferences,
         kbnDefinitions: definitions,
       });
       expect(parsed.data.length).toBeGreaterThan(0);
+      expect(
+        parsed.data.some((record) =>
+          ["m_departments", "r_authority", "r_user_report_outputs"].includes(record.targetTable),
+        ),
+      ).toBe(false);
       const today = localDate();
       for (const record of parsed.data) {
         const columns = new Set(
@@ -108,6 +123,8 @@ describe.skipIf(!schemaPath || !masterPath)("private local workbook acceptance",
         }
         if (record.targetTable === "m_products")
           expect(record.values["product_management_kbn"]).toBe("1");
+        if (columns.has("department_id"))
+          expect(record.values["department_id"]).toBe(expectedDepartmentId);
       }
       expect(parsed.issues).toEqual(
         expect.arrayContaining([
@@ -135,6 +152,8 @@ describe.skipIf(!schemaPath || !masterPath)("private local workbook acceptance",
           ].includes(issue.column ?? ""),
         ),
       ).toEqual([]);
+      if (departmentPath && departmentBytes)
+        expect((await readFile(departmentPath)).equals(departmentBytes)).toBe(true);
     },
     30000,
   );

@@ -7,8 +7,9 @@ const browserFiles = new WeakMap<SelectedFile, File>();
 
 export const FILE_RULES: Record<FileKind, { label: string; extensions: string[] }> = {
   tableDefinition: { label: "テーブル定義書", extensions: ["xlsx"] },
+  departmentReference: { label: "部門マスタ", extensions: ["xlsx"] },
   master: { label: "マスタ整備ファイル", extensions: ["xlsm", "xlsx"] },
-  kbnDefinition: { label: "KBN定義データ", extensions: ["json"] },
+  kbnDefinition: { label: "区分名称マスタ", extensions: ["json"] },
 };
 
 export function isAllowed(kind: FileKind, name: string) {
@@ -25,11 +26,15 @@ export async function pickFileNative(kind: FileKind): Promise<SelectedFile | nul
       ? settings.lastTableDefinitionPath
         ? dirname(settings.lastTableDefinitionPath)
         : undefined
-      : kind === "master"
-        ? (settings.lastMasterDirectory ?? undefined)
-        : settings.kbnSource?.path
-          ? dirname(settings.kbnSource.path)
-          : undefined;
+      : kind === "departmentReference"
+        ? settings.lastDepartmentReferencePath
+          ? dirname(settings.lastDepartmentReferencePath)
+          : undefined
+        : kind === "master"
+          ? (settings.lastMasterDirectory ?? undefined)
+          : settings.kbnSource?.path
+            ? dirname(settings.kbnSource.path)
+            : undefined;
 
   const rule = FILE_RULES[kind];
   const path = await open({
@@ -57,7 +62,9 @@ export async function pickFileNative(kind: FileKind): Promise<SelectedFile | nul
     await updateSettings(
       kind === "tableDefinition"
         ? { lastTableDefinitionPath: path }
-        : { lastMasterDirectory: dirname(path) },
+        : kind === "departmentReference"
+          ? { lastDepartmentReferencePath: path }
+          : { lastMasterDirectory: dirname(path) },
     );
   }
 

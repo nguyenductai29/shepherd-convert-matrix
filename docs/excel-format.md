@@ -1,6 +1,6 @@
 # Supported Shepherd workbook contract
 
-The input contract is the finalized nine-sheet Shepherd matrix workbook. It is not the earlier UI's demonstration format (`部門`, `商品`, `工程G`, etc.). Format knowledge and code lists live in `src/config/shepherd-master.ts`; the UI displays the same read-only mapping definitions used by the parser.
+The conversion uses four local files: a database table definition `.xlsx`, an existing department reference `.xlsx`, a KBN definition `.json`, and the finalized nine-sheet Shepherd matrix workbook (`.xlsm` or `.xlsx`). Format knowledge and extraction rules live in `src/config/shepherd-master.ts`; the UI displays the same read-only mapping definitions used by the parser. This is not a generic Excel importer.
 
 ## Table definition workbook
 
@@ -14,7 +14,27 @@ The parser reads the A5:SQL Mk-2 export format:
 
 The selected workbook is always the schema authority. Neither the UI examples nor the fixed extraction configuration override its columns, constraints, or defaults. Non-definition sheets in a definition workbook are ignored.
 
-Current exports explicitly include `auto_increment` in the column datatype. Some older exports omit it and only provide a table-level AUTO_INCREMENT counter. The parser can infer the column only when exactly one integer primary-key column exists. An older export with multiple possible identity columns is rejected with an explanation; export an up-to-date definition or annotate the correct column with `auto_increment`. In particular, the older definition of `r_user_report_outputs` is ambiguous, whereas its newer export identifies `dept_output_id` explicitly.
+Current exports explicitly include `auto_increment` in the column datatype. Some older exports omit it and only provide a table-level AUTO_INCREMENT counter. The parser can infer the column only when exactly one integer primary-key column exists. An older export with multiple possible identity columns is rejected with an explanation; export an up-to-date definition or annotate the correct column with `auto_increment`.
+
+## Department reference and master filename
+
+The master filename must be `<departmentCode>_Shepherd導入_マスタ整備ファイル.xlsm` or the `.xlsx` equivalent. `HPK_Shepherd導入_マスタ整備ファイル.xlsm` resolves code `HPK`. The literal template prefix `部門コード`, blank prefixes, surrounding whitespace and invalid filename characters are rejected. The prefix is a business key, not a database ID.
+
+The selected department workbook, for example `ShepherdDB.m_departments.xlsx`, represents existing `m_departments` rows. One sheet must contain all five headers in its first nonempty row, in any order:
+
+| Column            | Reference requirement                                          |
+| ----------------- | -------------------------------------------------------------- |
+| `department_id`   | Positive integer ID from the existing database                 |
+| `department_code` | Nonempty business key; matched exactly to the filename prefix  |
+| `department_name` | Nonempty department name                                       |
+| `edit_ctrl_kbn`   | Existing edit-control value                                    |
+| `invalid_flg`     | Boolean/bit `0` or `1`; the selected department must be active |
+
+Audit and effective-date columns are not required. Unrelated extra columns are ignored. Missing or repeated required headers, multiple candidate sheets and malformed reference values are errors.
+
+Exactly one row must have `department_code === extractedDepartmentCode`. Zero matches produce `部門コードに対応する部署が見つかりません。`; multiple matches produce `同一の部門コードが部門マスタに複数存在します。`. The resolved department is displayed read-only. Its integer `department_id` is injected into every generated record that has a `department_id` column. No department code is substituted for that ID, and no real or synthetic `m_departments` record is generated.
+
+Department source paths persist on desktop and are reloaded at startup. Browser users reselect the department workbook; its rows are not stored as a saved settings dictionary. If the file changes while the application is open, reselect it to load the new contents.
 
 ## Fixed master sheets
 
@@ -28,7 +48,7 @@ Current exports explicitly include `auto_increment` in the column datatype. Some
 | 3_選択肢マトリクス          | A1:B1 headers; rows 2 onward                                                                                                                                                                                               | Options and ordered option items                                                                                                  |
 | 4_10_帳票場所マトリクス     | A:J; data starts row 2                                                                                                                                                                                                     | Validates process location references. The sheet explicitly identifies itself as review information; no printer table is invented |
 | 5_9_工程Gマトリクス         | B group names, C:CX process columns; row 2 display types, row 3 names, groups start row 4                                                                                                                                  | Process groups, ordered group/process relationships, predecessor and final-process flags                                          |
-| 7_権限&帳票出力先マトリクス | Row 1 headers; A login/B review name/C report pattern/D output path/E role/F warning; data starts row 2                                                                                                                    | Authority, department report outputs, user/output relationships                                                                   |
+| 7_権限&帳票出力先マトリクス | Row 1 headers; A login/B review name/C report pattern/D output path/E role/F warning; data starts row 2                                                                                                                    | Department report outputs from C/D; user permissions and user-specific assignments are outside the selected generation scope      |
 
 Required sheets and fixed header text are checked before records are extracted. Header comparison normalizes whitespace and full-width character variants; explanatory lines following a fixed title are permitted. Data outside the fixed column ranges is rejected. Additional sheets are reported as warnings and do not participate in conversion.
 
@@ -43,31 +63,34 @@ The supplied sample is valid at process columns 13 and 15: item `S2`/`U2` and pr
 - Red (`FF0000`) and yellow (`FFFF00`) group cell fills encode previous-process error and warning checks. Unsupported theme colors require an explicit supported color rather than being guessed.
 - Product hierarchy levels use `0`, `1____`, `_2___`, and the equivalent underscore-padded levels. The stack of preceding parent levels supplies the immediate parent; D must agree with the root product code.
 - A product may occur in several BOM branches. The workbook explicitly says its first occurrence defines the product's name, part type, final check and group. Later occurrences retain their source rows; conflicting later values produce visible warnings. Duplicate relationship records remain errors under the schema's primary/unique constraints.
-- Repeated option names and item names define shared parent records. Individual option items and relationships are retained for duplicate validation. Repeated user rows for different report patterns share one authority record; conflicting roles or duplicate user/output assignments are errors.
+- Repeated option names and item names define shared parent records. Individual option items and relationships are retained for duplicate validation.
+- The report-output sheet still supplies department-level report patterns and paths for `m_department_report_outputs`. The selected generation scope excludes `r_authority` and `r_user_report_outputs`; it does not require user references or a login-to-user JSON setting. User IDs are never invented.
 - Registration/update timestamps and other database defaults are omitted where allowed. Generated surrogate IDs are not guessed: child records hold typed references to their inserted parent records.
 - Review-only fields (including user display-name notes, printer purchase notes and review progress) do not become database columns.
 
-## Required local conversion settings
+## Conversion context and automatic values
 
-The finalized file does **not** supply all common conversion values. The existing settings screen requires:
+`buildConversionContext` centralizes the resolved department, audit ID, local conversion date, effective end date, product management KBN and `KbnResolver`. Processing follows this order:
 
-- Customer-confirmed department code and department name; neither has an invented default.
-- A confirmed configurable quantity when product structures need it and the schema supplies no applicable default. No quantity is silently assumed.
-- A locally imported `m_kbn_definition` JSON export.
+1. Load the local reference files and validate the master filename.
+2. Resolve exactly one active department using the filename prefix.
+3. Load KBN definitions and resolve `KBN_PRODUCT_MANAGEMENT / Shepherd`.
+4. Build the context; validate the fixed workbook structure and parse/normalize records.
+5. Inject automatic/reference values and resolve record-level KBN mappings.
+6. Run database type, required, length, range, reference, PK and UNIQUE validation.
+7. Generate SQL only if there are no errors.
 
-Confirmed automatic values are applied to the columns that actually exist in each target table: `created_by = 1`, `updated_by = 1`, `effective_from = current local date`, and `effective_to = 9999-12-31`. The date is evaluated once per conversion, including after the app stays open overnight, and never loaded from a saved effective date. Old manual overrides are ignored. Missing departments or global KBN definitions stop before record validation, preventing cascading missing-value errors.
+Confirmed automatic values are applied to the columns that actually exist in each target table: `created_by = 1`, `updated_by = 1`, `effective_from = current local date`, and `effective_to = 9999-12-31`. The date is evaluated once per conversion, including after the app stays open overnight, and never loaded from a saved effective date. Manual department, audit and date inputs are removed; obsolete saved overrides are ignored. Missing departments or global KBN definitions stop before record validation, preventing cascading missing-value errors.
+
+Quantity remains configurable under `設定 → 品目構成の設定` when product structures require it and the schema supplies no applicable default. No quantity is silently assumed. If the table definition supplies a usable DEFAULT, leaving the setting blank preserves database default behavior.
 
 `KbnResolver` resolves `(category_kbn_code, kbn_name)` to `kbn_value` and supports reverse lookup. The JSON source is an array of these fields, with optional `invalid_flg`; invalid/inactive rows cannot supply values. Conflicting definitions are rejected. The loaded snapshot and source metadata persist locally. Changes to the file require explicit reload/reselection; no database connection or automatic remote refresh occurs.
 
-All applicable parser values use the resolver: `KBN_PRODUCT_MANAGEMENT / Shepherd`, `KBN_PROCESS`, `KBN_INPUT_TYPE`, `KBN_DISPLAY`, `KBN_UNIT`, `KBN_PART_TYPE`, `KBN_PREV_PROC_CHECK`, `KBN_FINAL_PROC_CHECK`, `KBN_ROLE`, and `KBN_PRINT_PATTERN`. Workbook-specific label aliases are centralized in the fixed format configuration and used only when the source has no exact label; no production numeric KBN fallback dictionaries remain. Option-input behavior uses canonical names, so changed codes do not bypass required option references.
+All applicable parser values use the resolver: `KBN_PRODUCT_MANAGEMENT / Shepherd`, `KBN_PROCESS`, `KBN_INPUT_TYPE`, `KBN_DISPLAY`, `KBN_UNIT`, `KBN_PART_TYPE`, `KBN_PREV_PROC_CHECK`, `KBN_FINAL_PROC_CHECK`, and `KBN_PRINT_PATTERN`. `KBN_ROLE` is not required because user permission generation is excluded. Workbook-specific label aliases are centralized in the fixed format configuration and used only when the source has no exact label; no production numeric KBN fallback dictionaries remain. Option-input behavior uses canonical names, so changed codes do not bypass required option references.
 
 The supplied source resolves SAP to `0` and Shepherd to `1`, but these values are data, not business-logic literals. It has no `KBN_UNIT / %` or `KBN_PRINT_PATTERN / 部材割当系`; these remain errors with source locations until an explicit matching definition is provided. The converter does not choose between assembly print-pattern variants.
 
-The remaining user reference dictionary is local business data:
-
-- `userIdByLogin`: existing database user IDs keyed by workbook login ID. User accounts, passwords and companies are not created from this workbook.
-
-No database connection is made to resolve these values. Their existence in the target database must be confirmed by the operator. Missing values block generation.
+The application never connects to a database to refresh references. The operator supplies current exports and confirms their applicability to the target database. Changing a selected source or relevant setting invalidates previous validation/SQL results.
 
 ## Workbook reading and provenance
 
@@ -79,13 +102,14 @@ Every normalized record retains source sheet/row, original mapped values and sou
 
 ## Tests without private workbooks
 
-`src/test/fixtures/master-workbook.ts` builds a synthetic nine-sheet workbook. Unit tests cover fixed-format rejection, partial rows, extraction, references, attributes, formula caches including 0/false, merged cells, colored marks, shared formulas and malformed archive limits. No customer workbook is committed.
+`src/test/fixtures/master-workbook.ts` builds a synthetic nine-sheet workbook. Unit tests cover fixed-format rejection, partial rows, extraction, references, attributes, formula caches including 0/false, merged cells, colored marks, shared formulas and malformed archive limits. Department tests cover filename extraction/rejection, required columns, absent/duplicate matches, resolved integer IDs and generation scope. No customer workbook is committed.
 
 Optional local acceptance tests read private workbooks from environment variables:
 
 ```powershell
 $env:SHEPHERD_SCHEMA_FIXTURE = 'C:\local\table-definition.xlsx'
-$env:SHEPHERD_MASTER_FIXTURE = 'C:\local\customer-master.xlsm'
+$env:SHEPHERD_MASTER_FIXTURE = 'C:\local\HPK_Shepherd導入_マスタ整備ファイル.xlsm'
+$env:SHEPHERD_DEPARTMENT_FIXTURE = 'C:\local\ShepherdDB.m_departments.xlsx'
 $env:SHEPHERD_KBN_FIXTURE = 'C:\local\m_kbn_definition.json'
 npm run test
 ```

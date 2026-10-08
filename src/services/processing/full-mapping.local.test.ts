@@ -2,11 +2,7 @@
 import { readFile } from "node:fs/promises";
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import {
-  EMPTY_CONVERSION_OPTIONS,
-  SHEPHERD_TABLE_ORDER,
-  shepherdMasterDefinition,
-} from "@/config/shepherd-master";
+import { SHEPHERD_TABLE_ORDER, shepherdMasterDefinition } from "@/config/shepherd-master";
 import type { SelectedFile } from "@/models";
 import { parseMaster, validateMasterFormat } from "./master-parser";
 import { parseTableDefinition } from "./table-definition";
@@ -14,6 +10,7 @@ import { readWorkbook } from "./workbook";
 import { validateMaster } from "./validation";
 import { generateSql } from "./sql-generator";
 import { kbnFixture } from "@/test/fixtures/kbn-definitions";
+import { masterFixtureOptions } from "@/test/fixtures/master-workbook";
 
 function completeMasterFixture(): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
@@ -91,7 +88,7 @@ function completeMasterFixture(): ExcelJS.Workbook {
 const schemaPath = process.env["SHEPHERD_SCHEMA_FIXTURE"];
 const file: SelectedFile = {
   kind: "master",
-  name: "acceptance.xlsm",
+  name: "35_Shepherd導入_マスタ整備ファイル.xlsm",
   path: null,
   extension: "xlsm",
   size: null,
@@ -109,12 +106,9 @@ describe.skipIf(!schemaPath)("complete mapping against private schema", () => {
     const master = completeMasterFixture();
     expect(validateMasterFormat(master, file.name).passed).toBe(true);
     const parsed = parseMaster(master, file, definition, {
-      ...EMPTY_CONVERSION_OPTIONS,
-      departmentCode: "35",
-      departmentName: "試験部門",
+      ...masterFixtureOptions,
       kbnDefinitions: kbnFixture,
       defaultQuantity: "1",
-      userIdByLogin: { worker: "17" },
     });
     expect(new Set(parsed.data.map((record) => record.targetTable))).toEqual(
       new Set(SHEPHERD_TABLE_ORDER),
@@ -128,11 +122,15 @@ describe.skipIf(!schemaPath)("complete mapping against private schema", () => {
     }).generatedSql;
     expect(sql.match(/INSERT INTO/g)).toHaveLength(parsed.data.length);
     for (const table of SHEPHERD_TABLE_ORDER) expect(sql).toContain(`INSERT INTO \`${table}\``);
-    expect(sql.indexOf("INSERT INTO `m_departments`")).toBeLessThan(
-      sql.indexOf("INSERT INTO `r_authority`"),
-    );
-    expect(sql.indexOf("INSERT INTO `m_department_report_outputs`")).toBeLessThan(
-      sql.indexOf("INSERT INTO `r_user_report_outputs`"),
-    );
+    expect(sql).not.toContain("INSERT INTO `m_departments`");
+    expect(sql).not.toContain("INSERT INTO `r_authority`");
+    expect(sql).not.toContain("INSERT INTO `r_user_report_outputs`");
+    expect(sql).toContain("INSERT INTO `m_department_report_outputs`");
+    for (const record of parsed.data) {
+      const table = definition.tables.find((entry) => entry.name === record.targetTable)!;
+      if (table.columns.some((column) => column.name === "department_id")) {
+        expect(record.values["department_id"]).toBe(123);
+      }
+    }
   }, 30000);
 });

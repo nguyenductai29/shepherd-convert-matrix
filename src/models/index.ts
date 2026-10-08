@@ -1,8 +1,9 @@
 // Shared contracts for local Excel processing and the existing UI.
 
 /* ---------- Files ---------- */
-export type ConversionFileKind = "tableDefinition" | "master";
-export type FileKind = ConversionFileKind | "kbnDefinition";
+export type ConversionFileKind =
+  "tableDefinition" | "departmentReference" | "kbnDefinition" | "master";
+export type FileKind = ConversionFileKind;
 
 export interface SelectedFile {
   kind: FileKind;

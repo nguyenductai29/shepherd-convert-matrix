@@ -3,6 +3,7 @@ import { invalidateConversion, runAnalysis, runGeneration, saveConversion } from
 import { initialConversion } from "@/state/app-state";
 import { defaultSettings } from "@/services/platform/local-settings";
 import type { ConversionState } from "@/state/app-state";
+import { masterFixtureOptions } from "@/test/fixtures/master-workbook";
 const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   check: vi.fn(),
@@ -33,10 +34,16 @@ vi.mock("@/services/platform/files", () => ({
 }));
 const file = {
   kind: "master" as const,
-  name: "test.xlsm",
+  name: "35_Shepherd導入_マスタ整備ファイル.xlsm",
   path: null,
   extension: ".xlsm",
   size: 1,
+};
+const settings = { ...defaultSettings, kbnDefinitions: masterFixtureOptions.kbnDefinitions };
+const departmentFile = { ...file, kind: "departmentReference" as const, name: "departments.xlsx" };
+const references = {
+  departmentReferenceFile: departmentFile,
+  departmentReference: { file: departmentFile, rows: masterFixtureOptions.departmentReferences },
 };
 describe("conversion error gates", () => {
   const validState = (): ConversionState => ({
@@ -94,12 +101,13 @@ describe("conversion error gates", () => {
     );
     const state: ConversionState = {
       ...initialConversion,
+      ...references,
       masterFile: file,
       tableDefinitionFile: { ...file, kind: "tableDefinition" },
       tableDefinition: { file: { ...file, kind: "tableDefinition" }, tables: [] },
     };
     const patch = vi.fn();
-    const run = runAnalysis(state, patch, defaultSettings);
+    const run = runAnalysis(state, patch, settings);
     await Promise.resolve();
     invalidateConversion();
     patch.mockClear();
@@ -115,6 +123,7 @@ describe("conversion error gates", () => {
   it("does not parse or generate when workbook format fails", async () => {
     let state: ConversionState = {
       ...initialConversion,
+      ...references,
       masterFile: file,
       tableDefinitionFile: { ...file, kind: "tableDefinition" },
     };
@@ -128,12 +137,53 @@ describe("conversion error gates", () => {
       (p) => {
         state = { ...state, ...p };
       },
-      defaultSettings,
+      settings,
     );
     expect(state.generatedSql).toBeNull();
     expect(state.conversionStatus).toBe("failed");
     expect(mocks.parse).not.toHaveBeenCalled();
     expect(mocks.generate).not.toHaveBeenCalled();
+  });
+  it("blocks missing references before schema or workbook processing", async () => {
+    const state = { ...validState(), departmentReference: null, departmentReferenceFile: null };
+    const patch = vi.fn();
+    await runAnalysis(state, patch, settings);
+    expect(mocks.check).not.toHaveBeenCalled();
+    expect(mocks.parse).not.toHaveBeenCalled();
+    expect(mocks.validate).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        conversionStatus: "failed",
+        errorMessage: "部門マスタを選択してください。",
+      }),
+    );
+  });
+  it("passes one serializable context to the worker and publishes the resolved department", async () => {
+    const state = { ...validState(), ...references };
+    mocks.check.mockResolvedValueOnce({ passed: true, items: [] });
+    mocks.parse.mockResolvedValueOnce(state.parsedData);
+    mocks.validate.mockResolvedValueOnce(state.validationResult);
+    const patch = vi.fn();
+    await runAnalysis(state, patch, settings);
+    expect(mocks.parse).toHaveBeenCalledWith(
+      file,
+      state.tableDefinition,
+      expect.objectContaining({
+        departmentReferences: masterFixtureOptions.departmentReferences,
+      }),
+      expect.objectContaining({
+        department: masterFixtureOptions.departmentReferences[0],
+        auditUserId: 1,
+        effectiveTo: "9999-12-31",
+        productManagementKbn: "1",
+      }),
+    );
+    const context = mocks.parse.mock.calls[0]?.[3];
+    expect(context).not.toHaveProperty("kbnResolver");
+    expect(context.effectiveFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(patch).toHaveBeenCalledWith({
+      resolvedDepartment: masterFixtureOptions.departmentReferences[0],
+    });
   });
   it("blocks generation even when a stale ready status has validation errors", async () => {
     const state: ConversionState = {

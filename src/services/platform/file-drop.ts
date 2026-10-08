@@ -46,11 +46,14 @@ export async function subscribeNativeFileDrop(
       if (!file)
         throw new Error("ファイルを読み込めませんでした。ファイルとアクセス権を確認してください。");
       if (!enabled() || selected !== selection) return;
-      await updateSettings(
-        kind === "tableDefinition"
-          ? { lastTableDefinitionPath: path }
-          : { lastMasterDirectory: dirname(path) },
-      );
+      if (kind !== "kbnDefinition")
+        await updateSettings(
+          kind === "tableDefinition"
+            ? { lastTableDefinitionPath: path }
+            : kind === "departmentReference"
+              ? { lastDepartmentReferencePath: path }
+              : { lastMasterDirectory: dirname(path) },
+        );
       if (enabled() && selected === selection) options.onFile(file);
     } catch (error) {
       if (enabled() && selected === selection) {

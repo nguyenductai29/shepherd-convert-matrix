@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import ExcelJS from "exceljs";
 import { readFile } from "node:fs/promises";
 import {
@@ -6,13 +6,14 @@ import {
   masterFixtureOptions as fixtureOptions,
 } from "../src/test/fixtures/master-workbook";
 import { parseMaster } from "../src/services/processing/master-parser";
-import { defaultSettings } from "../src/services/platform/local-settings";
 
-async function workbooks(invalid = false) {
+const masterName = "35_Shepherd導入_マスタ整備ファイル.xlsm";
+
+async function workbooks(invalid = false, invalidValues = false) {
   const master = masterFixture();
   const file = {
     kind: "master" as const,
-    name: "test.xlsm",
+    name: masterName,
     path: null,
     extension: ".xlsm",
     size: null,
@@ -62,11 +63,77 @@ async function workbooks(invalid = false) {
       row++;
     }
   }
+  const departments = new ExcelJS.Workbook();
+  const departmentSheet = departments.addWorksheet("m_departments");
+  departmentSheet.addRow([
+    "department_id",
+    "department_code",
+    "department_name",
+    "edit_ctrl_kbn",
+    "invalid_flg",
+  ]);
+  for (const department of fixtureOptions.departmentReferences) {
+    departmentSheet.addRow([
+      department.departmentId,
+      department.departmentCode,
+      department.departmentName,
+      department.editCtrlKbn,
+      Number(department.invalidFlg),
+    ]);
+  }
   if (invalid) master.removeWorksheet("大工程マトリクス");
+  if (invalidValues) master.getWorksheet("2_3_4_8_工程項目マトリクス")!.getCell("D8").value = "%";
   return {
     schema: Buffer.from(await schema.xlsx.writeBuffer()),
     master: Buffer.from(await master.xlsx.writeBuffer()),
+    departments: Buffer.from(await departments.xlsx.writeBuffer()),
   };
+}
+
+async function loadKbn(page: Page) {
+  await page.getByLabel("区分名称マスタファイル").setInputFiles({
+    name: "m_kbn_definition.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(fixtureOptions.kbnDefinitions)),
+  });
+  await expect(
+    page.getByText(`読込済み: ${fixtureOptions.kbnDefinitions.length}件`, { exact: true }),
+  ).toBeVisible();
+}
+
+async function selectWorkbooks(
+  page: Page,
+  files: Awaited<ReturnType<typeof workbooks>>,
+  kbn = true,
+) {
+  await page.getByLabel("テーブル定義書ファイル").setInputFiles({
+    name: "schema.xlsx",
+    mimeType: "application/octet-stream",
+    buffer: files.schema,
+  });
+  await page.getByLabel("部門マスタファイル").setInputFiles({
+    name: "ShepherdDB.m_departments.xlsx",
+    mimeType: "application/octet-stream",
+    buffer: files.departments,
+  });
+  await expect(
+    page.getByRole("button", { name: "ファイルを変更", exact: true }).first(),
+  ).toBeEnabled();
+  if (kbn) await loadKbn(page);
+  await page.getByLabel("マスタ整備ファイル", { exact: true }).setInputFiles({
+    name: masterName,
+    mimeType: "application/octet-stream",
+    buffer: files.master,
+  });
+  await expect(page.getByRole("button", { name: "変換を開始", exact: true })).toBeEnabled();
+}
+
+async function configureQuantity(page: Page) {
+  await page.goto("/settings");
+  await page.getByRole("textbox", { name: "品目構成の数量" }).fill("1");
+  await page.getByRole("button", { name: "設定を保存", exact: true }).click();
+  await expect(page.getByText("設定を保存しました。", { exact: true })).toBeVisible();
+  await page.goto("/convert");
 }
 
 test("empty screens, persistent settings and real worker conversion/save", async ({
@@ -87,42 +154,39 @@ test("empty screens, persistent settings and real worker conversion/save", async
     await page.goto(route);
     await expect(page.locator("main")).not.toContainText("モック");
   }
-  await page.getByRole("textbox").nth(0).fill("35");
+  await expect(page.getByRole("textbox")).toHaveCount(1);
+  await expect(page.locator("textarea")).toHaveCount(0);
+  await expect(page.locator("main")).not.toContainText("ログインID → ユーザーID");
+  await page.getByRole("textbox", { name: "品目構成の数量" }).fill("1");
   await page.getByRole("button", { name: "設定を保存", exact: true }).click();
+  await expect(page.getByText("設定を保存しました。", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("textbox").nth(0)).toHaveValue("35");
-  await page.evaluate(
-    (settings) => localStorage.setItem("shepherd-local-settings", JSON.stringify(settings)),
-    { ...defaultSettings, ...fixtureOptions, kbnDefinitions: [] },
-  );
-  await page.reload();
-  await page.getByLabel("KBN定義ファイル").setInputFiles({
+  await expect(page.getByRole("textbox", { name: "品目構成の数量" })).toHaveValue("1");
+  await page.goto("/convert");
+  await expect(page.locator('input[type="file"]')).toHaveCount(4);
+  await page.getByLabel("区分名称マスタファイル").setInputFiles({
     name: "m_kbn_definition.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(fixtureOptions.kbnDefinitions)),
   });
-  await expect(page.getByText(/KBN定義を読み込みました/)).toBeVisible();
-  await expect(page.locator('input[value="Shepherd → 1"]')).toBeVisible();
+  // Source loading belongs to the provider and survives navigation away from the card.
+  await page.locator("aside").getByRole("link", { name: "設定", exact: true }).click();
+  await expect(page.locator("main")).toContainText("m_kbn_definition.json");
+  await page.locator("aside").getByRole("link", { name: "マスタ変換", exact: true }).click();
+  await expect(
+    page.getByText(`読込済み: ${fixtureOptions.kbnDefinitions.length}件`, { exact: true }),
+  ).toBeVisible();
   await page.reload();
-  await expect(page.locator('input[value="Shepherd → 1"]')).toBeVisible();
-  await expect(page.getByRole("textbox").nth(0)).toHaveValue("35");
-  await page.goto("/convert");
+  await expect(page.getByText("m_kbn_definition.json", { exact: true })).toBeVisible();
   const files = await workbooks();
-  await page.locator('input[type="file"]').nth(0).setInputFiles({
-    name: "schema.xlsx",
-    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    buffer: files.schema,
-  });
-  await page.locator('input[type="file"]').nth(1).setInputFiles({
-    name: "master.xlsm",
-    mimeType: "application/vnd.ms-excel.sheet.macroEnabled.12",
-    buffer: files.master,
-  });
-  await expect(page.getByRole("button", { name: "変換を開始", exact: true })).toBeEnabled();
+  await selectWorkbooks(page, files, false);
+  await page.locator("main").evaluate((element) => element.scrollTo(0, 0));
+  await page.screenshot({ path: "test-results/conversion-references.png", fullPage: false });
   await page.getByRole("button", { name: "変換を開始", exact: true }).click();
   await expect(
     page.getByText("すべての検証が完了しました。SQLを生成できます。", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("ID: 123", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "SQL生成", exact: true }).click();
   await expect(page).toHaveURL(/\/sql$/);
   await expect(page.getByText("START TRANSACTION;", { exact: true })).toBeVisible();
@@ -133,6 +197,9 @@ test("empty screens, persistent settings and real worker conversion/save", async
   await page.getByRole("button", { name: "SQLをコピー", exact: true }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain("COMMIT;");
+  expect(copied).not.toContain("INSERT INTO `m_departments`");
+  expect(copied).not.toContain("r_user_report_outputs");
+  expect(copied).toContain("123");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "SQLをダウンロード", exact: true }).click();
   const download = await downloadPromise;
@@ -141,7 +208,7 @@ test("empty screens, persistent settings and real worker conversion/save", async
   expect(await readFile((await download.path())!, "utf8")).toBe(copied.replace(/\r\n/g, "\n"));
   await expect(page.getByText("生成ファイルを保存しました。", { exact: true })).toBeVisible();
   await page.goto("/history");
-  await expect(page.getByRole("cell", { name: "master.xlsm", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: masterName, exact: true })).toBeVisible();
   await page.getByRole("link", { name: "詳細", exact: true }).click();
   await expect(page.getByText("この実行の検証結果", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
@@ -149,18 +216,9 @@ test("empty screens, persistent settings and real worker conversion/save", async
 });
 
 test("invalid format clears SQL and blocks generation", async ({ page }) => {
-  await page.goto("/convert");
+  await configureQuantity(page);
   const files = await workbooks(true);
-  await page.locator('input[type="file"]').nth(0).setInputFiles({
-    name: "schema.xlsx",
-    mimeType: "application/octet-stream",
-    buffer: files.schema,
-  });
-  await page.locator('input[type="file"]').nth(1).setInputFiles({
-    name: "master.xlsm",
-    mimeType: "application/octet-stream",
-    buffer: files.master,
-  });
+  await selectWorkbooks(page, files);
   await page.getByRole("button", { name: "変換を開始", exact: true }).click();
   await expect(
     page.getByText("マスタファイルのフォーマットが定義と一致しないため処理を続行できません。", {
@@ -183,18 +241,9 @@ test.afterEach(async ({ page }, info) => {
 });
 
 test("validation errors export reports without SQL", async ({ page }) => {
-  await page.goto("/convert");
-  const files = await workbooks();
-  await page.locator('input[type="file"]').nth(0).setInputFiles({
-    name: "schema.xlsx",
-    mimeType: "application/octet-stream",
-    buffer: files.schema,
-  });
-  await page.locator('input[type="file"]').nth(1).setInputFiles({
-    name: "master.xlsm",
-    mimeType: "application/octet-stream",
-    buffer: files.master,
-  });
+  await configureQuantity(page);
+  const files = await workbooks(false, true);
+  await selectWorkbooks(page, files);
   await page.getByRole("button", { name: "変換を開始", exact: true }).click();
   await expect(
     page.getByText("検証エラーが存在するためSQLを生成できません。", { exact: true }),

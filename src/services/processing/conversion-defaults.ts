@@ -1,4 +1,5 @@
 import type { MasterRecord, TableDefinition } from "@/models";
+import type { SerializableConversionContext } from "@/models/references";
 
 export const CONFIRMED_CONVERSION_DEFAULTS = {
   created_by: 1,
@@ -13,12 +14,16 @@ export function localDate(date = new Date()): string {
 
 export function confirmedDefaults(
   table: TableDefinition | undefined,
-  today: string,
+  context: SerializableConversionContext,
 ): MasterRecord["values"] {
   const columns = new Set(table?.columns.map((column) => column.name));
   return Object.fromEntries(
-    Object.entries({ ...CONFIRMED_CONVERSION_DEFAULTS, effective_from: today }).filter(([name]) =>
-      columns.has(name),
-    ),
+    Object.entries({
+      created_by: context.auditUserId,
+      updated_by: context.auditUserId,
+      effective_from: context.effectiveFrom,
+      effective_to: context.effectiveTo,
+      department_id: context.department.departmentId,
+    }).filter(([name]) => columns.has(name)),
   );
 }

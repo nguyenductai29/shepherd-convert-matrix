@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { fromBrowserFile, isAllowed, readSelectedFile, saveConversionArtifacts } from "./files";
 
 describe("local file handling", () => {
+  it("accepts only xlsx department reference workbooks", async () => {
+    const selected = fromBrowserFile(
+      "departmentReference",
+      new File(["reference"], "ShepherdDB.m_departments.xlsx"),
+    );
+    expect(isAllowed("departmentReference", selected.name)).toBe(true);
+    expect(isAllowed("departmentReference", "departments.xlsm")).toBe(false);
+    expect(new TextDecoder().decode(await readSelectedFile(selected))).toBe("reference");
+  });
   it("reads a browser KBN JSON source locally without accepting it as a workbook", async () => {
     const json = '[{"category_kbn_code":"KBN_UNIT","kbn_name":"個","kbn_value":"8"}]';
     const selected = fromBrowserFile("kbnDefinition", new File([json], "区分.JSON"));

@@ -1,22 +1,17 @@
 import type { SheetMapping } from "@/models";
 import type { KbnDefinition } from "@/models/kbn";
+import type { DepartmentRow } from "@/models/references";
 
-/** Values the finalized workbook intentionally does not contain. They must be
- * confirmed in local settings; reference dictionaries are database reference
- * data, never user-defined Excel mappings. */
+/** Local reference snapshots and the only remaining configurable business value. */
 export interface ConversionOptions {
-  departmentCode: string;
-  departmentName: string;
+  departmentReferences: DepartmentRow[];
   defaultQuantity: string;
-  userIdByLogin: Record<string, string>;
   kbnDefinitions: KbnDefinition[];
 }
 
 export const EMPTY_CONVERSION_OPTIONS: ConversionOptions = {
-  departmentCode: "",
-  departmentName: "",
+  departmentReferences: [],
   defaultQuantity: "",
-  userIdByLogin: {},
   kbnDefinitions: [],
 };
 
@@ -153,7 +148,6 @@ export const shepherdMasterDefinition = {
 } as const;
 
 export const SHEPHERD_TABLE_ORDER = [
-  "m_departments",
   "m_major_processes",
   "m_item_names",
   "m_options",
@@ -166,8 +160,13 @@ export const SHEPHERD_TABLE_ORDER = [
   "r_process_groups",
   "m_product_department_process_groups",
   "r_product_structures",
-  "r_authority",
   "m_department_report_outputs",
+] as const;
+
+/** Existing departments are references; user-specific records are outside this conversion. */
+export const EXCLUDED_CONVERSION_TABLES = [
+  "m_departments",
+  "r_authority",
   "r_user_report_outputs",
 ] as const;
 
@@ -185,14 +184,6 @@ export const SHEPHERD_SHEET_MAX_COLUMNS: Record<string, number> = {
 
 const sheets = shepherdMasterDefinition.sheets;
 export const sheetMappings: SheetMapping[] = [
-  {
-    sheet: "変換設定",
-    table: "m_departments",
-    mappings: [
-      { excel: "部門コード", column: "department_code" },
-      { excel: "部門名", column: "department_name" },
-    ],
-  },
   {
     sheet: sheets.major.name,
     table: "m_major_processes",
@@ -298,26 +289,10 @@ export const sheetMappings: SheetMapping[] = [
   },
   {
     sheet: sheets.permissions.name,
-    table: "r_authority",
-    mappings: [
-      { excel: "A列: ログインID", column: "user_id", note: "ローカル参照ID設定で解決" },
-      { excel: "E列: 役割", column: "role_kbn" },
-    ],
-  },
-  {
-    sheet: sheets.permissions.name,
     table: "m_department_report_outputs",
     mappings: [
       { excel: "C列", column: "report_pattern_id" },
       { excel: "D列", column: "csv_output_path" },
-    ],
-  },
-  {
-    sheet: sheets.permissions.name,
-    table: "r_user_report_outputs",
-    mappings: [
-      { excel: "A列", column: "user_id" },
-      { excel: "C/D列", column: "dept_output_id" },
     ],
   },
 ];

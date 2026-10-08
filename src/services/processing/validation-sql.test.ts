@@ -25,7 +25,13 @@ const col = (
 const table = (
   columns: ColumnDefinition[],
   extra: Partial<TableDefinition> = {},
-): TableDefinition => ({ name: "m_departments", logical: "部門", columns, indexes: [], ...extra });
+): TableDefinition => ({
+  name: "m_major_processes",
+  logical: "部門",
+  columns,
+  indexes: [],
+  ...extra,
+});
 const definition = (...tables: TableDefinition[]): TableDefinitionLoadResult => ({
   file: { ...file, kind: "tableDefinition" },
   tables,
@@ -33,7 +39,7 @@ const definition = (...tables: TableDefinition[]): TableDefinitionLoadResult => 
 const record = (
   values: MasterRecord["values"],
   row = 8,
-  targetTable = "m_departments",
+  targetTable = "m_major_processes",
 ): MasterRecord => ({
   id: `${targetTable}:${row}`,
   entity: targetTable,
@@ -280,7 +286,7 @@ describe("master validation", () => {
   });
   it("blocks missing references and reference cycles", () => {
     const a = record(
-      { parent: { kind: "reference", recordId: "m_departments:9", column: "id" } },
+      { parent: { kind: "reference", recordId: "m_major_processes:9", column: "id" } },
       8,
     );
     const b = record({ parent: { kind: "reference", recordId: a.id, column: "id" } }, 9);
@@ -375,7 +381,7 @@ describe("safe MySQL generation", () => {
       table([col("department_id", "int"), col("name")], { name: "m_products" }),
     );
     const sql = generateSql(parsed(child, parent), schema, options).generatedSql;
-    expect(sql.indexOf("INSERT INTO `m_departments`")).toBeLessThan(
+    expect(sql.indexOf("INSERT INTO `m_major_processes`")).toBeLessThan(
       sql.indexOf("INSERT INTO `m_products`"),
     );
     expect(sql).toContain("LAST_INSERT_ID()");
@@ -388,7 +394,7 @@ describe("safe MySQL generation", () => {
       schema,
       options,
     ).generatedSql;
-    expect(sql.indexOf("INSERT INTO `m_departments`")).toBeLessThan(
+    expect(sql.indexOf("INSERT INTO `m_major_processes`")).toBeLessThan(
       sql.indexOf("INSERT INTO `m_products`"),
     );
   });

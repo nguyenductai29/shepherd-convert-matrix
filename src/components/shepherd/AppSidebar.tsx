@@ -35,9 +35,13 @@ export function AppSidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="flex items-center gap-2.5 border-b border-sidebar-border px-4 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary font-mono text-sm font-bold text-sidebar-primary-foreground">
-          S
-        </div>
+        <img
+          src="/shepherd-icon.png"
+          alt=""
+          width={32}
+          height={32}
+          className="h-8 w-8 shrink-0 rounded-md object-contain"
+        />
         <div className="leading-tight">
           <p className="text-sm font-semibold text-foreground">Shepherd</p>
           <p className="text-[11px] text-muted-foreground">Master SQL Generator</p>

@@ -3,31 +3,36 @@ import { isDesktop } from "./runtime";
 import type { ConversionOptions } from "@/config/shepherd-master";
 import { parseKbnDefinitions } from "@/services/processing/kbn-resolver";
 
-export interface LocalSettings extends ConversionOptions {
+export interface LocalSettings extends Omit<ConversionOptions, "departmentReferences"> {
   lastTableDefinitionPath: string | null;
+  lastDepartmentReferencePath: string | null;
   lastMasterDirectory: string | null;
   lastOutputDirectory: string | null;
   sqlTransaction: boolean;
   sqlComments: boolean;
   outputEncoding: "utf-8";
   theme: "light" | "dark" | "system";
-  kbnSource: { name: string; path: string | null; loadedAt: string } | null;
+  kbnSource: {
+    name: string;
+    path: string | null;
+    loadedAt: string;
+    size?: number | null;
+    modifiedAt?: string | null;
+  } | null;
   /** Retained across unrelated saves until the source is successfully reloaded or reset. */
   kbnSourceError: string | null;
 }
 
 export const defaultSettings: LocalSettings = {
   lastTableDefinitionPath: null,
+  lastDepartmentReferencePath: null,
   lastMasterDirectory: null,
   lastOutputDirectory: null,
   sqlTransaction: true,
   sqlComments: true,
   outputEncoding: "utf-8",
   theme: "light",
-  departmentCode: "",
-  departmentName: "",
   defaultQuantity: "",
-  userIdByLogin: {},
   kbnDefinitions: [],
   kbnSource: null,
   kbnSourceError: null,
@@ -54,6 +59,7 @@ function normalizeSettings(value: unknown): LocalSettings {
   const settings = value as Record<string, unknown>;
   for (const key of [
     "lastTableDefinitionPath",
+    "lastDepartmentReferencePath",
     "lastMasterDirectory",
     "lastOutputDirectory",
   ] as const) {
@@ -65,16 +71,8 @@ function normalizeSettings(value: unknown): LocalSettings {
   }
   const theme = settings["theme"];
   if (theme === "light" || theme === "dark" || theme === "system") out.theme = theme;
-  for (const key of ["departmentCode", "departmentName", "defaultQuantity"] as const) {
+  for (const key of ["defaultQuantity"] as const) {
     if (typeof settings[key] === "string") out[key] = settings[key];
-  }
-  for (const key of ["userIdByLogin"] as const) {
-    const mapping = settings[key];
-    if (mapping && typeof mapping === "object" && !Array.isArray(mapping)) {
-      out[key] = Object.fromEntries(
-        Object.entries(mapping).filter(([, value]) => typeof value === "string"),
-      );
-    }
   }
   if (typeof settings["kbnSourceError"] === "string")
     out.kbnSourceError = settings["kbnSourceError"];
@@ -88,7 +86,13 @@ function normalizeSettings(value: unknown): LocalSettings {
       typeof item["loadedAt"] === "string" &&
       Number.isFinite(Date.parse(item["loadedAt"]))
     )
-      out.kbnSource = { name: item["name"], path: item["path"], loadedAt: item["loadedAt"] };
+      out.kbnSource = {
+        name: item["name"],
+        path: item["path"],
+        loadedAt: item["loadedAt"],
+        ...(typeof item["size"] === "number" ? { size: item["size"] } : {}),
+        ...(typeof item["modifiedAt"] === "string" ? { modifiedAt: item["modifiedAt"] } : {}),
+      };
   }
   if (settings["kbnDefinitions"] !== undefined) {
     try {

@@ -6,13 +6,18 @@ import { useAppState } from "@/state/app-state";
 import type { ConversionFileKind, SelectedFile } from "@/models";
 import { FILE_RULES, fromBrowserFile, isAllowed, pickFileNative } from "@/services/platform/files";
 import { formatBytes, isDesktop } from "@/services/platform/runtime";
-import { loadSettings } from "@/services/platform/local-settings";
 import { subscribeNativeFileDrop } from "@/services/platform/file-drop";
 import { Button } from "@/components/ui/button";
 import { PROCESSING } from "@/features/conversion/run-conversion";
 import { StatusBadge } from "./status";
 
 export const STEPS = ["ファイル選択", "フォーマット確認", "データ解析", "検証", "SQL生成"];
+const fileKeys = {
+  tableDefinition: "tableDefinitionFile",
+  departmentReference: "departmentReferenceFile",
+  kbnDefinition: "kbnDefinitionFile",
+  master: "masterFile",
+} as const;
 
 export function StepProgress({
   current,
@@ -104,8 +109,8 @@ export function SelectedFileInfo({ file, onClear }: { file: SelectedFile; onClea
 }
 
 function useFileSelection(kind: ConversionFileKind) {
-  const { setFile, setSettings, conversion } = useAppState();
-  const busy = PROCESSING.includes(conversion.conversionStatus);
+  const { setFile, conversion } = useAppState();
+  const busy = conversion.referenceLoading || PROCESSING.includes(conversion.conversionStatus);
   const input = useRef<HTMLInputElement>(null);
 
   const accept = (f: SelectedFile | null) => {
@@ -117,9 +122,6 @@ function useFileSelection(kind: ConversionFileKind) {
       return;
     }
     setFile(f, kind);
-    void loadSettings()
-      .then(setSettings)
-      .catch(() => toast.error("ローカル設定を読み込めませんでした。"));
   };
 
   const pick = async () => {
@@ -138,6 +140,7 @@ function useFileSelection(kind: ConversionFileKind) {
       ref={input}
       type="file"
       accept={FILE_RULES[kind].extensions.map((e) => "." + e).join(",")}
+      aria-label={`${FILE_RULES[kind].label}${FILE_RULES[kind].label.endsWith("ファイル") ? "" : "ファイル"}`}
       className="hidden"
       onChange={(e) => {
         const f = e.target.files?.[0];
@@ -153,16 +156,19 @@ function useFileSelection(kind: ConversionFileKind) {
 /** Large drop area + native picker. Used for the master file. */
 export function FileDropzone({ kind }: { kind: ConversionFileKind }) {
   const { conversion, setFile } = useAppState();
-  const file = kind === "master" ? conversion.masterFile : conversion.tableDefinitionFile;
+  const file = conversion[fileKeys[kind]];
   const { pick, accept, hiddenInput } = useFileSelection(kind);
   const [drag, setDrag] = useState(false);
   const dropArea = useRef<HTMLDivElement>(null);
   const latestSelection = useRef({
     accept,
-    busy: PROCESSING.includes(conversion.conversionStatus),
+    busy: conversion.referenceLoading || PROCESSING.includes(conversion.conversionStatus),
   });
   useEffect(() => {
-    latestSelection.current = { accept, busy: PROCESSING.includes(conversion.conversionStatus) };
+    latestSelection.current = {
+      accept,
+      busy: conversion.referenceLoading || PROCESSING.includes(conversion.conversionStatus),
+    };
   });
   useEffect(() => {
     let active = true;
@@ -240,7 +246,7 @@ export function FileDropzone({ kind }: { kind: ConversionFileKind }) {
       {file && (
         <SelectedFileInfo
           file={file}
-          {...(!PROCESSING.includes(conversion.conversionStatus)
+          {...(!conversion.referenceLoading && !PROCESSING.includes(conversion.conversionStatus)
             ? { onClear: () => setFile(null, kind) }
             : {})}
         />
@@ -252,14 +258,14 @@ export function FileDropzone({ kind }: { kind: ConversionFileKind }) {
 /** Compact picker button + file info. Used for the table definition file. */
 export function FilePickerCard({ kind }: { kind: ConversionFileKind }) {
   const { conversion, setFile } = useAppState();
-  const file = kind === "master" ? conversion.masterFile : conversion.tableDefinitionFile;
+  const file = conversion[fileKeys[kind]];
   const { pick, hiddenInput } = useFileSelection(kind);
   return (
     <div className="space-y-3">
       {file ? (
         <SelectedFileInfo
           file={file}
-          {...(!PROCESSING.includes(conversion.conversionStatus)
+          {...(!conversion.referenceLoading && !PROCESSING.includes(conversion.conversionStatus)
             ? { onClear: () => setFile(null, kind) }
             : {})}
         />
@@ -273,12 +279,17 @@ export function FilePickerCard({ kind }: { kind: ConversionFileKind }) {
         variant="outline"
         size="sm"
         onClick={pick}
-        disabled={PROCESSING.includes(conversion.conversionStatus)}
+        disabled={conversion.referenceLoading || PROCESSING.includes(conversion.conversionStatus)}
       >
         <FolderOpen />
         {file ? "ファイルを変更" : "ファイルを選択"}
       </Button>
       {hiddenInput}
+      {kind === "tableDefinition" && conversion.tableDefinitionError && (
+        <p role="alert" className="whitespace-pre-wrap text-xs text-destructive">
+          {conversion.tableDefinitionError}
+        </p>
+      )}
     </div>
   );
 }

@@ -51,6 +51,11 @@ async function processInWorker<T>(
 }
 
 export const processingServices: ProcessingServices = {
+  departmentReference: {
+    async load(file) {
+      return processInWorker("department-reference", { file }, await bytes(file));
+    },
+  },
   kbnDefinition: {
     async load(file) {
       if (file.kind !== "kbnDefinition") throw new Error("KBN定義データを選択してください。");
@@ -68,8 +73,8 @@ export const processingServices: ProcessingServices = {
     },
   },
   masterParser: {
-    async parse(file, definition, options) {
-      return processInWorker("parse", { file, definition, options }, await bytes(file));
+    async parse(file, definition, options, context) {
+      return processInWorker("parse", { file, definition, options, context }, await bytes(file));
     },
   },
   validation: {

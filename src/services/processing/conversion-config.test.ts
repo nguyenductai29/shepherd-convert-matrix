@@ -8,7 +8,7 @@ import { validateMaster } from "./validation";
 
 const file: SelectedFile = {
   kind: "master",
-  name: "test.xlsm",
+  name: "35_Shepherd導入_マスタ整備ファイル.xlsm",
   path: null,
   extension: "xlsm",
   size: null,
@@ -106,7 +106,6 @@ describe("confirmed defaults and KBN-backed conversion", () => {
     const parsed = parseMaster(wb, file, [], {
       ...options,
       kbnDefinitions: rows,
-      userIdByLogin: { worker: "17" },
     });
     expect(parsed.issues?.filter((issue) => issue.severity === "error")).toEqual([]);
     const values = (name: string) =>
@@ -122,7 +121,10 @@ describe("confirmed defaults and KBN-backed conversion", () => {
       final_proc_check_kbn: "loaded:WARNING",
     });
     expect(values("r_process_groups")["prev_proc_check_kbn"]).toBe("loaded:ERROR");
-    expect(values("r_authority")["role_kbn"]).toBe("loaded:2");
+    expect(parsed.data.some((record) => record.targetTable === "r_authority")).toBe(false);
+    expect(parsed.data.some((record) => record.targetTable === "r_user_report_outputs")).toBe(
+      false,
+    );
     expect(values("m_department_report_outputs")["report_pattern_id"]).toBe("loaded:IF0016");
   });
 
@@ -172,7 +174,7 @@ describe("confirmed defaults and KBN-backed conversion", () => {
       "C:/reports",
       "作業者(HPK)",
     ];
-    const parsed = parseMaster(wb, file, [], { ...options, userIdByLogin: { worker: "17" } });
+    const parsed = parseMaster(wb, file, [], options);
     expect(parsed.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -197,7 +199,6 @@ describe("confirmed defaults and KBN-backed conversion", () => {
     );
     const resolved = parseMaster(wb, file, [], {
       ...options,
-      userIdByLogin: { worker: "17" },
       kbnDefinitions: [
         ...kbnFixture,
         { category_kbn_code: "KBN_UNIT", kbn_name: "%", kbn_value: "percent" },
@@ -207,19 +208,15 @@ describe("confirmed defaults and KBN-backed conversion", () => {
     expect(resolved.issues?.filter((issue) => issue.severity === "error")).toEqual([]);
   });
 
-  it("preflights only missing departments and does not produce per-record NOT NULL cascades", () => {
+  it("preflights an unresolved department once without per-record NOT NULL cascades", () => {
     const parsed = parseMaster(masterFixture(), file, [], {
       ...options,
-      departmentCode: "",
-      departmentName: "",
+      departmentReferences: [],
     });
     expect(parsed.data).toEqual([]);
     const checked = validateMaster(parsed, { file, tables: [] });
-    expect(checked.errorCount).toBe(2);
-    expect(checked.items.map((issue) => issue.column)).toEqual([
-      "departmentCode",
-      "departmentName",
-    ]);
+    expect(checked.errorCount).toBe(1);
+    expect(checked.items[0]?.message).toContain("部門コードに対応する部署が見つかりません。");
   });
 
   it("reports a missing Shepherd definition once at preflight", () => {
